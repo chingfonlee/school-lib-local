@@ -93,9 +93,14 @@ CREATE TABLE IF NOT EXISTS import_profiles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     file_type TEXT NOT NULL CHECK(file_type IN ('library_holdings', 'vendor_books')),
-    column_mappings TEXT NOT NULL,   -- JSON: {"來源欄名": "系統欄名"}
+    project_type TEXT CHECK(project_type IN ('local_culture', 'general_books')),
+    source_type TEXT,                -- 書商或機構名稱（選填，供識別）
+    header_row INTEGER DEFAULT 0,   -- 標題列號（0-based，對應 pandas read_excel 的 header 參數）
+    mappings TEXT NOT NULL DEFAULT '{}',  -- JSON: {"系統欄名": "來源欄名"}，如 {"title": "書名", "isbn": "條碼"}
+    extra_field_settings TEXT,       -- JSON: ["分類", "適合年齡"]，使用者選定要保留的額外欄位清單
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+    -- 備註：舊欄位 column_mappings（{"來源欄名": "系統欄名"}）由 mappings（key/value 方向相反）取代
 );
 
 -- project_id 對 library_holdings 批次為 NULL
@@ -147,7 +152,9 @@ CREATE TABLE IF NOT EXISTS vendor_books (
     policy_topic TEXT,               -- SDGs / SEL 等政策議題（從獲獎項目欄分離），不填入 award_item
     award_notes TEXT,                -- 待確認標記；非空時 completeness_status 強制為 needs_review
     user_overrides TEXT,             -- JSON: {"欄位名": "修正值"}
-    raw_row TEXT                     -- JSON: 原始列資料
+    extra_fields TEXT,               -- JSON: 使用者在精靈步驟 D 選定要保留的額外書商欄位值，如 {"分類": "文學"}
+    source_row_number INTEGER,       -- 來源 Excel 的列號（1-based），供除錯與溯源
+    raw_row TEXT                     -- JSON: 原始列全欄資料（包含所有欄位，不論是否對應）
 );
 
 CREATE TABLE IF NOT EXISTS book_matches (
@@ -224,33 +231,67 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 ### Step 4：Excel Import Pipeline（app/services/import_service.py）
 
-#### 4.1 學校館藏匯入（.xls）
+#### 4.1 學校館藏匯入（.xls）— 維持單步驟
 
 - `pandas.read_excel(engine='xlrd')` 讀取 .xls
 - 依 `LIBRARY_COLUMN_HINTS` 字典比對 header row（不分大小寫、去除前後空白）
 - 自動偵測不完整時，回傳未對應欄位清單，供前端顯示讓使用者補齊並儲存為新 profile
 - 每筆：呼叫 `isbn_service` 取得 `isbn_normalized` 與 `isbn_status`
 - 批次寫入 `library_holdings`；建立 `import_batches`（project_id = NULL）
+- 館藏無 extra_fields（欄位固定）；缺 ISBN 館藏仍寫入，isbn_status 為 'missing'/'invalid'
 
-#### 4.2 書商書單匯入（.xlsx）
+#### 4.2 書商書單匯入（.xlsx）— 兩步驟：preview + confirm
 
-- `pandas.read_excel(engine='openpyxl')` 讀取 .xlsx
-- 依 `VENDOR_COLUMN_HINTS` 自動偵測欄位（含 list_price / purchase_price）
+書商書單匯入改為兩步驟 API，對應前端精靈流程：
+
+**步驟一：`preview_excel(file_bytes, sheet_name, header_row) -> dict`**
+
+不寫資料庫，僅回傳：
+
+```python
+{
+    "sheets": ["Sheet1", "工作表2", ...],        # 工作簿所有 sheet 名稱
+    "guessed_header_row": 0,                    # 猜測的標題列號（0-based）
+    "source_columns": ["書名", "條碼", "定價"],  # 使用指定 header_row 讀取後的欄名清單
+    "guessed_mappings": {                        # 系統猜測的欄位對應
+        "title": "書名",
+        "isbn": "條碼",
+        "list_price": "定價",
+        ...
+    },
+    "unmapped_system_fields": ["vendor_seq", "age_range"],  # 未能猜測的系統欄位
+    "extra_source_columns": ["分類", "適合年齡", "主題"]    # 未對應至任何系統欄位的來源欄
+}
+```
+
+此函式只讀 Excel，不建立 import_batches，不寫 vendor_books。
+
+**步驟二：`confirm_import(file_bytes, project_id, sheet_name, header_row, mappings, extra_field_settings, user_id) -> dict`**
+
+正式匯入，mappings 格式為 `{"title": "書名", "isbn": "條碼", ...}`（系統欄名 → 來源欄名）：
+
+- 依 `mappings` 讀取每列欄位值
 - 書單原始數量與總價欄保留於 `raw_row` JSON，不作採購計算依據
+- 依 `extra_field_settings`（欄名清單）從來源列取值，寫入 `extra_fields` JSON
+- `source_row_number` 記錄來源 Excel 的 1-based 列號
 - 每筆：呼叫 `isbn_service`；呼叫 `completeness_service.compute` 計算初始 `completeness_status`
 - 批次寫入 `vendor_books`；建立 `import_batches`（project_id = 選定專案 id）
+- 回傳 `{batch_id, record_count, skipped_count}`
 
 #### 4.3 欄位對應設定（import_profiles）
 
-- 使用者手動調整的欄位對應可儲存為 `import_profile`，供下次匯入套用
-- column_mappings 格式：`{"來源欄名": "系統欄名"}`，如 `{"條碼": "isbn", "定價": "list_price"}`
+- 使用者在精靈步驟 C/D 完成的欄位對應可儲存為 `import_profile`，供下次匯入套用
+- `mappings` 格式：`{"系統欄名": "來源欄名"}`，如 `{"title": "書名", "isbn": "條碼"}`
+- `extra_field_settings` 格式：`["分類", "適合年齡"]`（欄名清單）
+- `header_row`：標題列號（0-based）
+- `source_type`：書商名稱（選填，供 profile 識別）
 
 #### 4.4 獲獎項目處理（local_culture V1：直接保留原文）
 
 V1 `local_culture` 匯入時，`award_item` 欄位**直接複製書商來源欄「獲獎項目」的原始文字**：
 
 ```python
-book["award_item"] = raw_row.get("獲獎項目") or None
+book["award_item"] = get_field("award_item") or None
 ```
 
 不執行任何關鍵字拆分，不自動填值，不設 award_notes。`policy_topic` 與 `award_notes` 保持 NULL。
@@ -259,18 +300,21 @@ book["award_item"] = raw_row.get("獲獎項目") or None
 
 ### Step 5：Match Service（app/services/match_service.py）
 
-實作 `run_match(project_id: int, batch_run_id: str) -> dict`：
+實作 `run_match(project_id: int) -> dict`：
 
-1. 讀取所有 `library_holdings`，建立 `{isbn_normalized: holding_id}` 索引
-2. 建立 `{title_stripped: [isbn_normalized]}` 索引（書名去除空白後比對），供 `same_title_different_isbn` 偵測
-3. 讀取隸屬 project 的所有 `vendor_books`，逐筆判斷 `match_status`：
-   - isbn_status = `missing` → `missing_isbn`
-   - isbn_status = `invalid` → `invalid_isbn`
+**館藏索引（valid-ISBN-only）：**
+1. 讀取 `library_holdings WHERE isbn_normalized IS NOT NULL`（含 isbn_status 過濾已在 normalize 確保），建立 `{isbn_normalized: holding_id}` 索引
+2. 缺 ISBN 或 ISBN 無效的館藏**不加入索引**（isbn_normalized 為 NULL，自然不在索引中）
+3. 建立 `{title_stripped: [isbn_normalized]}` 索引，供 `same_title_different_isbn` 偵測
+
+**書商書單比對（valid-ISBN-only）：**
+4. 讀取隸屬 project 的 `vendor_books WHERE isbn_status = 'valid'`，逐筆判斷：
    - isbn_normalized 存在館藏索引 → `already_owned`
    - isbn_normalized 不在館藏索引 → `available`
-4. 對 `available` 的書目：若書名（去除空白後）在館藏書名索引中找到不同 ISBN → 額外新增一筆 `same_title_different_isbn` 記錄（不覆蓋 `available`）
-5. 批次寫入 `book_matches`
-6. 回傳各 match_status 的統計筆數
+5. isbn_status = `missing` 或 `invalid` 的書商書目**不寫入 book_matches**，不作為比對對象
+6. 對 `available` 的書目：若書名（去除空白後）在館藏書名索引中找到不同 ISBN → 額外新增一筆 `same_title_different_isbn` 記錄（不覆蓋 `available`）
+7. 批次寫入 `book_matches`
+8. 回傳統計：`{available, already_owned, same_title_different_isbn}`（不含 missing_isbn / invalid_isbn，這兩者在 /stats API 以 ignored_missing_isbn / ignored_invalid_isbn 另行回傳）
 
 ### Step 6：Completeness Service（app/services/completeness_service.py）
 
@@ -411,11 +455,12 @@ async def startup():
 - `POST /logout`：清除 session
 
 **imports router（/api/imports）**
-- `POST /holdings`：上傳學校館藏 .xls，執行匯入
-- `POST /vendor-books`：上傳書商書單 .xlsx，執行匯入（body 含 project_id）
+- `POST /holdings`：上傳學校館藏 .xls，執行匯入（維持單步驟）
+- `POST /vendor-books/preview`：上傳書商書單 .xlsx，回傳欄位猜測結果（不寫 DB）；body: `{sheet_name, header_row}`（可省略，系統自動猜測）
+- `POST /vendor-books/confirm`：正式匯入；body: `{project_id, sheet_name, header_row, mappings, extra_field_settings, save_profile, profile_name}`
 - `GET /batches`：列出匯入批次（可依 project_id 篩選）
 - `GET /profiles`：列出欄位對應設定
-- `POST /profiles`：儲存欄位對應設定
+- `POST /profiles`：儲存欄位對應設定（含 mappings、header_row、extra_field_settings）
 
 **books router（/api/books）**
 - `GET /matches`：取得比對結果（query params: project_id, match_status, completeness_status）
@@ -476,21 +521,29 @@ async def startup():
 - 狀態摘要：館藏筆數、書單筆數、選書筆數、上次匯出時間
 - 快速跳轉連結至各功能頁
 
-**import.html**
+**import.html（精靈式流程）**
 - 分頁籤：學校館藏 / 書商書單（上方顯示目前選定專案）
-- 拖曳或點選上傳；上傳後顯示欄位對應結果
-- 未對應欄位顯示下拉選單讓使用者補齊
-- 「儲存欄位設定」按鈕；匯入紀錄表格
+- 學校館藏分頁：維持單步驟上傳，上傳後顯示欄位對應結果與未對應欄位下拉選單
+- 書商書單分頁：5 步驟精靈（步驟指示列於頁面頂端，顯示目前步驟）：
+  - **A 上傳**：拖曳或點選上傳 .xlsx，呼叫 preview API
+  - **B 選擇工作表與標題列**：下拉選 sheet；系統預填猜測的 header_row，使用者可修改；「更新預覽」重新呼叫 preview API
+  - **C 欄位對應**：表格顯示系統欄位 → 下拉選單選取來源欄；系統預填猜測值，使用者可修改；必要欄位未對應時顯示紅色警示；未對應的來源欄顯示於「尚未對應」區塊
+  - **D 額外欄位**：Checkbox 列出所有未對應來源欄，使用者勾選要保留於 extra_fields 的欄位；可套用已儲存的 profile
+  - **E 確認匯入**：顯示摘要（專案、book 數量預估、欄位對應清單）；「儲存欄位設定」checkbox（選填 profile 名稱）；「確認匯入」按鈕呼叫 confirm API；完成後顯示匯入筆數與 batch_id
+- 匯入紀錄表格（兩分頁共用，顯示 batch_type、批次時間、筆數）
 
 **match.html**
-- 頂部統計：各 match_status 與 completeness_status 的筆數 badge
-- 篩選器：match_status（全部 / 可採購 / 已館藏 / ISBN 異常）× completeness_status（全部 / 可匯出 / 需補資料 / 缺必填）
+- 頂部統計：各 match_status 與 completeness_status 的筆數 badge；另顯示「已忽略缺 ISBN N 本」（灰色，非錯誤）
+- 篩選器：match_status（全部 / 可採購 / 已館藏，**移除 ISBN 異常選項**）× completeness_status（全部 / 可匯出 / 需補資料 / 缺必填）
+- 預設顯示 isbn_status = 'valid' 的書商書目；缺 ISBN 書目不出現在清單中
 - 表格：書名、作者、出版社、ISBN、獲獎項目、match_status badge、completeness_status badge
 - 「重新比對」按鈕
 
 **selection.html**
-- 顯示 match_status = `available` 的書目
+- 顯示 match_status = `available` 且 isbn_status = 'valid' 的書目
 - 每筆右側：採購數量輸入框 + completeness_status badge + 「修正資料」連結（展開 inline 編輯 overrides）
+- 每筆可展開「額外資訊」區塊，顯示 extra_fields 中的欄位與值
+- 頂部篩選器：可依 extra_fields 欄位值篩選（如「分類：文學」）；篩選選項從現有 extra_fields 動態產生
 - 底部即時預算試算：以 list_price 與 purchase_price 分別顯示總計
 - 「清空選書」按鈕（需確認）
 
