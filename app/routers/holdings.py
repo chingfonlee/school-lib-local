@@ -19,7 +19,7 @@ async def search_holdings(
     offset: int = Query(0),
     user_id: int = Depends(require_auth),
 ):
-    limit = min(limit, 200)
+    limit = min(max(limit, 0), 200)
     offset = max(offset, 0)
 
     if not any([q, isbn, title, author, publisher, library_record_id]):
