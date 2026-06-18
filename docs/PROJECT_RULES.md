@@ -104,6 +104,22 @@ updated: ""
 - Cross-session 需要保留的資訊，寫入 spec、plan、log 或 `STATUS.md`，不只留在提示詞內
 - 不得超出 plan 已涵蓋的範圍自行擴張
 
+## Review 規則
+
+### Code Review
+
+- 當使用者要求 review、審核、檢查程式碼、檢查 diff 時，Codex 必須啟用 Ponytail review 觀點。
+- 本專案維護者本機使用 Ponytail Codex plugin；進行 code review 時，Codex 應使用 `ponytail-review` / `@ponytail-review` 的審核標準，檢查是否有過度設計、可刪除程式碼、不必要抽象、不必要 dependency、可用標準函式庫或原生功能取代的實作。
+- Ponytail review 只負責 complexity / over-engineering；一般 correctness、安全性、資料遺失風險、測試缺口仍需照常審核。
+- 如果某次環境無法載入 plugin，仍必須依 Ponytail review 原則人工執行簡化審核，並在回覆中明確說明 plugin 載入異常。
+
+### Spec / Plan Review
+
+- 當使用者要求審核 spec、plan、需求文件或任務設計時，Codex 必須使用 Ponytail 觀點檢查範圍是否過度擴張。
+- 審核重點包含：MVP 是否過大、不必要的抽象、過早預留、非必要 dependency、可延後的功能、是否有更簡單的流程。
+- Ponytail 觀點只負責簡化與範圍控制；仍需同時審核需求完整性、驗收條件、資料風險、使用者流程、驗證方式與開源維護性。
+- 審核結果應清楚區分：必須修改、建議簡化、可延後到 V2、保留是合理的。
+
 ---
 
 ## Session Start
