@@ -1,0 +1,50 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from app.auth import require_auth
+from app.services.selection_service import (
+    upsert_selection,
+    get_selection_summary,
+    get_selected_books,
+    clear_all_selections,
+)
+
+router = APIRouter(prefix="/api/selections", tags=["selections"])
+
+
+class SelectionUpsert(BaseModel):
+    project_id: int
+    vendor_book_id: int
+    quantity: int
+    notes: str | None = None
+
+
+@router.get("/")
+async def list_selections(
+    project_id: int = Query(...),
+    user_id: int = Depends(require_auth),
+):
+    books = get_selected_books(project_id)
+    summary = get_selection_summary(project_id)
+    return {"summary": summary, "items": books}
+
+
+@router.post("/")
+async def update_selection(body: SelectionUpsert, user_id: int = Depends(require_auth)):
+    result = upsert_selection(
+        body.project_id,
+        body.vendor_book_id,
+        body.quantity,
+        body.notes,
+        user_id,
+    )
+    return result
+
+
+@router.delete("/")
+async def delete_all_selections(
+    project_id: int = Query(...),
+    user_id: int = Depends(require_auth),
+):
+    result = clear_all_selections(project_id)
+    return result

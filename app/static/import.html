@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>匯入 — 圖書採購系統</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <span class="nav-title">圖書採購系統</span>
+    <div class="nav-steps">
+      <a href="/projects.html">採購專案</a>
+      <a href="/import.html" class="active">匯入</a>
+      <a href="/match.html">比對結果</a>
+      <a href="/selection.html">選書</a>
+      <a href="/export-check.html">匯出前檢查</a>
+      <a href="/export.html">匯出</a>
+    </div>
+    <div class="nav-right"><span id="user-name"></span> <a href="#" onclick="logout()">登出</a></div>
+  </div>
+</nav>
+<div class="page container">
+  <h1>匯入書單</h1>
+  <p class="subtitle" id="project-label">目前專案：載入中...</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('holdings',this)">學校館藏</button>
+    <button class="tab-btn" onclick="switchTab('vendor',this)">書商書單</button>
+    <button class="tab-btn" onclick="switchTab('history',this)">匯入紀錄</button>
+  </div>
+
+  <!-- 館藏 -->
+  <div id="tab-holdings" class="tab-panel active">
+    <div class="alert alert-info">支援 .xls 格式。館藏為全域共用，不限於特定採購專案。</div>
+    <div class="upload-area" onclick="document.getElementById('holdings-file').click()" id="holdings-drop">
+      <div class="icon">📁</div>
+      <div>點擊或拖曳上傳 <strong>學校館藏 .xls</strong></div>
+      <div class="hint">最大 50MB</div>
+      <input type="file" id="holdings-file" accept=".xls,.xlsx" onchange="uploadHoldings(this.files[0])">
+    </div>
+    <div id="holdings-result" style="margin-top:16px"></div>
+  </div>
+
+  <!-- 書商書單 -->
+  <div id="tab-vendor" class="tab-panel">
+    <div id="vendor-alert" class="alert alert-warn" style="display:none">請先選擇採購專案</div>
+    <div class="alert alert-info">支援 .xlsx 格式。書單資料歸屬於目前選定的採購專案。</div>
+    <div class="upload-area" onclick="document.getElementById('vendor-file').click()" id="vendor-drop">
+      <div class="icon">📚</div>
+      <div>點擊或拖曳上傳 <strong>書商書單 .xlsx</strong></div>
+      <div class="hint">最大 50MB</div>
+      <input type="file" id="vendor-file" accept=".xlsx" onchange="uploadVendor(this.files[0])">
+    </div>
+    <div id="vendor-result" style="margin-top:16px"></div>
+  </div>
+
+  <!-- 紀錄 -->
+  <div id="tab-history" class="tab-panel">
+    <div id="batch-list"></div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="/js/common.js"></script>
+<script>
+let pid = null;
+
+requireAuth().then(async () => {
+  pid = getProjectId();
+  const el = document.getElementById('project-label');
+  if (pid) {
+    const proj = await api(`/api/projects/${pid}`);
+    el.textContent = `目前專案：${proj.name}`;
+  } else {
+    el.textContent = '尚未選擇採購專案';
+    document.getElementById('vendor-alert').style.display = 'block';
+  }
+});
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'history') loadHistory();
+}
+
+function setupDrop(dropId, handler) {
+  const el = document.getElementById(dropId);
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag-over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+  el.addEventListener('drop', e => {
+    e.preventDefault(); el.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) handler(f);
+  });
+}
+setupDrop('holdings-drop', uploadHoldings);
+setupDrop('vendor-drop', uploadVendor);
+
+async function uploadHoldings(file) {
+  if (!file) return;
+  const el = document.getElementById('holdings-result');
+  el.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> 匯入中...</div>';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const result = await api('/api/imports/holdings', { method: 'POST', body: fd });
+    el.innerHTML = `
+      <div class="alert alert-success">
+        ✓ 匯入完成：共 <strong>${result.record_count}</strong> 筆
+        ${result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}（可在欄位對應設定中補齊）` : ''}
+      </div>`;
+    showToast('館藏匯入完成');
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error">匯入失敗：${e.message}</div>`;
+  }
+}
+
+async function uploadVendor(file) {
+  if (!file) return;
+  if (!pid) { showToast('請先選擇採購專案'); return; }
+  const el = document.getElementById('vendor-result');
+  el.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> 匯入中...</div>';
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('project_id', pid);
+  try {
+    const result = await api('/api/imports/vendor-books', { method: 'POST', body: fd });
+    el.innerHTML = `
+      <div class="alert alert-success">
+        ✓ 匯入完成：共 <strong>${result.record_count}</strong> 筆
+        ${result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}` : ''}
+      </div>
+      <p style="margin-top:12px;font-size:14px">
+        <a href="/match.html">前往比對結果 →</a>
+      </p>`;
+    showToast('書單匯入完成');
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error">匯入失敗：${e.message}</div>`;
+  }
+}
+
+async function loadHistory() {
+  const batches = await api(pid ? `/api/imports/batches?project_id=${pid}` : '/api/imports/batches');
+  const el = document.getElementById('batch-list');
+  if (!batches.length) {
+    el.innerHTML = '<div class="empty"><div class="icon">📋</div><p>尚無匯入紀錄</p></div>';
+    return;
+  }
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>檔名</th><th>類型</th><th>筆數</th><th>匯入時間</th></tr></thead>
+    <tbody>${batches.map(b => `
+      <tr>
+        <td>${b.original_filename}</td>
+        <td>${b.batch_type === 'library_holdings' ? '館藏' : '書商書單'}</td>
+        <td>${b.record_count || '—'}</td>
+        <td>${new Date(b.imported_at).toLocaleString('zh-TW')}</td>
+      </tr>`).join('')}
+    </tbody></table></div>`;
+}
+</script>
+</body>
+</html>

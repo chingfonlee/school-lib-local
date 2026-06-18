@@ -19,3 +19,13 @@ updated: 2026-06-18
   base_branch: main
   last_log: 2026-06-18-161913.md
   last_agent: claude
+
+## 後續文件需求
+
+- 本專案預計開源給其他小學校本地安裝使用；本土圖書 MVP 跑通後，需建立教師可照著操作的 Markdown 懶人包文件。
+- 文件先以活文件方式維護，不必等所有功能完成才開始；功能尚未完成的段落可標記「開發中」。
+- 建議文件：
+  - `README.md`：專案用途、支援範圍、系統需求、本地資料安全說明、目前開發狀態。
+  - `docs/user-guide/local-culture-quickstart.md`：本土文化採購快速操作流程。
+  - `docs/user-guide/install-windows.md`：Windows 安裝與啟動說明。
+- 本土圖書 MVP 完成後，補上實際畫面、按鈕名稱、匯入順序、匯出檢查與常見問題。

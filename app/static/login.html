@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登入 — 圖書採購系統</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-title">圖書採購系統</div>
+    <div class="login-sub">請登入後繼續</div>
+    <div id="alert" class="alert alert-error" style="display:none"></div>
+    <div class="form-group">
+      <label>帳號</label>
+      <input type="text" id="username" placeholder="admin" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>密碼</label>
+      <input type="password" id="password" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">登入</button>
+  </div>
+</div>
+<script>
+document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+async function waitReady() {
+  for (let i = 0; i < 20; i++) {
+    try {
+      const r = await fetch('/api/health');
+      if (r.ok) return;
+    } catch {}
+    await new Promise(r => setTimeout(r, 500));
+  }
+}
+
+async function doLogin() {
+  const u = document.getElementById('username').value.trim();
+  const p = document.getElementById('password').value;
+  if (!u || !p) return;
+  const alert = document.getElementById('alert');
+  alert.style.display = 'none';
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert.textContent = err.detail || '登入失敗';
+      alert.style.display = 'block';
+      return;
+    }
+    window.location.href = '/index.html';
+  } catch {
+    alert.textContent = '連線失敗，請確認系統已啟動';
+    alert.style.display = 'block';
+  }
+}
+
+waitReady().then(() => {
+  fetch('/api/auth/me').then(r => {
+    if (r.ok) window.location.href = '/index.html';
+  });
+});
+</script>
+</body>
+</html>

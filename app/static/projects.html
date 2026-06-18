@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>採購專案 — 圖書採購系統</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <span class="nav-title">圖書採購系統</span>
+    <div class="nav-steps">
+      <a href="/projects.html" class="active">採購專案</a>
+      <a href="/import.html">匯入</a>
+      <a href="/match.html">比對結果</a>
+      <a href="/selection.html">選書</a>
+      <a href="/export-check.html">匯出前檢查</a>
+      <a href="/export.html">匯出</a>
+    </div>
+    <div class="nav-right"><span id="user-name"></span> <a href="#" onclick="logout()">登出</a></div>
+  </div>
+</nav>
+<div class="page container">
+  <div class="section-header">
+    <div><h1>採購專案</h1><p class="subtitle">選擇工作專案，或建立新專案</p></div>
+    <div class="right"><button class="btn btn-primary" onclick="showNewForm()">+ 新增專案</button></div>
+  </div>
+
+  <div id="new-form" class="card" style="display:none">
+    <h2>新增採購專案</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label>專案名稱</label>
+        <input type="text" id="new-name" placeholder="例：115年度本土文化採購">
+      </div>
+      <div class="form-group">
+        <label>採購類型</label>
+        <select id="new-type">
+          <option value="local_culture">本土文化採購</option>
+          <option value="general_books" disabled>一般圖書採購（即將推出）</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>定價欄顯示</label>
+        <select id="new-price-field">
+          <option value="purchase_price">採購單價</option>
+          <option value="list_price">定價</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>小計計算方式</label>
+        <select id="new-subtotal">
+          <option value="quantity_times_purchase_price">數量 × 採購單價</option>
+          <option value="quantity_times_list_price">數量 × 定價</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="createProject()">建立</button>
+      <button class="btn btn-secondary" onclick="hideNewForm()">取消</button>
+    </div>
+  </div>
+
+  <div id="project-list"></div>
+
+  <!-- Edit modal -->
+  <div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:200;display:flex;align-items:center;justify-content:center">
+    <div class="card" style="width:480px;margin:0">
+      <h2>編輯專案設定</h2>
+      <input type="hidden" id="edit-id">
+      <div class="form-group"><label>專案名稱</label><input type="text" id="edit-name"></div>
+      <div class="form-group">
+        <label>定價欄顯示</label>
+        <select id="edit-price-field">
+          <option value="purchase_price">採購單價</option>
+          <option value="list_price">定價</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>小計計算方式</label>
+        <select id="edit-subtotal">
+          <option value="quantity_times_purchase_price">數量 × 採購單價</option>
+          <option value="quantity_times_list_price">數量 × 定價</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="saveEdit()">儲存</button>
+        <button class="btn btn-secondary" onclick="closeEdit()">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="/js/common.js"></script>
+<script>
+requireAuth().then(loadProjects);
+document.getElementById('edit-modal').style.display = 'none';
+
+async function loadProjects() {
+  const projects = await api('/api/projects/');
+  const el = document.getElementById('project-list');
+  if (!projects.length) {
+    el.innerHTML = '<div class="empty"><div class="icon">📋</div><p>尚無採購專案</p></div>';
+    return;
+  }
+  const cur = getProjectId();
+  el.innerHTML = projects.map(p => `
+    <div class="project-card">
+      <div>
+        <div class="project-name">${p.name} ${cur == p.id ? '<span class="badge badge-available">目前使用</span>' : ''}</div>
+        <div class="project-meta">
+          ${p.project_type === 'local_culture' ? '本土文化採購' : '一般圖書採購'} ·
+          已選 ${p.selection_count} 本 ·
+          ${p.last_export ? '上次匯出 ' + new Date(p.last_export).toLocaleDateString('zh-TW') : '未匯出'}
+        </div>
+        <div class="project-meta" style="margin-top:4px;font-size:12px;color:#999">
+          定價欄：${p.price_field === 'purchase_price' ? '採購單價' : '定價'} ·
+          小計：${p.subtotal_mode === 'quantity_times_purchase_price' ? '數量×採購單價' : '數量×定價'}
+        </div>
+      </div>
+      <div class="project-actions">
+        <button class="btn btn-primary btn-sm" onclick="selectProject(${p.id},'${p.name.replace(/'/g,"\\'")}')">選擇</button>
+        <button class="btn btn-secondary btn-sm" onclick="openEdit(${p.id},'${p.name.replace(/'/g,"\\'")}','${p.price_field}','${p.subtotal_mode}')">設定</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectProject(id, name) {
+  setProject(id, name);
+  showToast(`已切換至：${name}`);
+  setTimeout(() => { window.location.href = '/index.html'; }, 800);
+}
+
+function showNewForm() { document.getElementById('new-form').style.display = 'block'; }
+function hideNewForm() { document.getElementById('new-form').style.display = 'none'; }
+
+async function createProject() {
+  const name = document.getElementById('new-name').value.trim();
+  if (!name) return showToast('請填入專案名稱');
+  await api('/api/projects/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      project_type: document.getElementById('new-type').value,
+      price_field: document.getElementById('new-price-field').value,
+      subtotal_mode: document.getElementById('new-subtotal').value,
+    })
+  });
+  hideNewForm();
+  showToast('專案已建立');
+  loadProjects();
+}
+
+function openEdit(id, name, pf, sm) {
+  document.getElementById('edit-id').value = id;
+  document.getElementById('edit-name').value = name;
+  document.getElementById('edit-price-field').value = pf;
+  document.getElementById('edit-subtotal').value = sm;
+  document.getElementById('edit-modal').style.display = 'flex';
+}
+function closeEdit() { document.getElementById('edit-modal').style.display = 'none'; }
+
+async function saveEdit() {
+  const id = document.getElementById('edit-id').value;
+  await api(`/api/projects/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: document.getElementById('edit-name').value.trim(),
+      price_field: document.getElementById('edit-price-field').value,
+      subtotal_mode: document.getElementById('edit-subtotal').value,
+    })
+  });
+  closeEdit();
+  showToast('已儲存');
+  loadProjects();
+}
+</script>
+</body>
+</html>

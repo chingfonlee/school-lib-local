@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>匯出前檢查 — 圖書採購系統</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <span class="nav-title">圖書採購系統</span>
+    <div class="nav-steps">
+      <a href="/projects.html">採購專案</a>
+      <a href="/import.html">匯入</a>
+      <a href="/match.html">比對結果</a>
+      <a href="/selection.html">選書</a>
+      <a href="/export-check.html" class="active">匯出前檢查</a>
+      <a href="/export.html">匯出</a>
+    </div>
+    <div class="nav-right"><span id="user-name"></span> <a href="#" onclick="logout()">登出</a></div>
+  </div>
+</nav>
+<div class="page container">
+  <h1>匯出前置檢查</h1>
+  <p class="subtitle" id="project-label">目前專案：載入中...</p>
+
+  <div class="card">
+    <div class="form-row" style="align-items:flex-end">
+      <div class="form-group">
+        <label>定價欄顯示</label>
+        <select id="price-field" onchange="runCheck()">
+          <option value="purchase_price">採購單價</option>
+          <option value="list_price">定價</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>小計計算方式</label>
+        <select id="subtotal-mode" onchange="runCheck()">
+          <option value="quantity_times_purchase_price">數量 × 採購單價</option>
+          <option value="quantity_times_list_price">數量 × 定價</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:none">
+        <button class="btn btn-secondary" onclick="runCheck()">重新檢查</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-row" id="stats-row"></div>
+  <div id="alert-area"></div>
+
+  <div class="card" style="padding:0">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>書名</th><th>比對狀態</th><th>完整度</th><th>缺少必填</th><th>缺少建議欄位</th>
+        </tr></thead>
+        <tbody id="detail-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-top:20px;display:flex;align-items:center;gap:12px">
+    <button id="export-btn" class="btn btn-primary" onclick="goExport()">繼續匯出</button>
+    <span id="export-hint" style="font-size:13px;color:#6e6e73"></span>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="/js/common.js"></script>
+<script>
+let pid = null;
+let lastCheck = null;
+
+requireAuth().then(async () => {
+  pid = getProjectId();
+  if (!pid) { showToast('請先選擇採購專案'); return; }
+  const proj = await api(`/api/projects/${pid}`);
+  document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
+  document.getElementById('price-field').value = proj.price_field;
+  document.getElementById('subtotal-mode').value = proj.subtotal_mode;
+  await runCheck();
+});
+
+async function runCheck() {
+  if (!pid) return;
+  const pf = document.getElementById('price-field').value;
+  const sm = document.getElementById('subtotal-mode').value;
+  const data = await api(`/api/exports/check?project_id=${pid}&price_field=${pf}&subtotal_mode=${sm}`);
+  lastCheck = data;
+  renderStats(data);
+  renderDetails(data.details);
+  renderHint(data);
+}
+
+function renderStats(d) {
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat-card gray"><div class="num">${d.total_selected}</div><div class="label">已選書目</div></div>
+    <div class="stat-card green"><div class="num">${d.export_ready}</div><div class="label">可匯出</div></div>
+    <div class="stat-card yellow"><div class="num">${d.needs_review}</div><div class="label">需補資料</div></div>
+    <div class="stat-card red"><div class="num">${d.missing_required}</div><div class="label">不可匯出</div></div>
+    ${d.already_owned > 0 ? `<div class="stat-card gray"><div class="num">${d.already_owned}</div><div class="label">已館藏（異常）</div></div>` : ''}
+  `;
+}
+
+function renderDetails(details) {
+  const tbody = document.getElementById('detail-body');
+  if (!details.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:40px">尚無選書</td></tr>';
+    return;
+  }
+  tbody.innerHTML = details.map(d => `
+    <tr>
+      <td>${d.title || '—'}</td>
+      <td>${badge(d.match_status)}</td>
+      <td>${badge(d.completeness_status)}</td>
+      <td class="missing-list">${d.missing_blocking_fields.length ? d.missing_blocking_fields.join('、') : '<span style="color:#1d8348">無</span>'}</td>
+      <td class="missing-list">${d.missing_review_fields.length ? d.missing_review_fields.join('、') : '<span style="color:#1d8348">無</span>'}</td>
+    </tr>
+  `).join('');
+}
+
+function renderHint(d) {
+  const btn = document.getElementById('export-btn');
+  const hint = document.getElementById('export-hint');
+  const alertArea = document.getElementById('alert-area');
+  alertArea.innerHTML = '';
+
+  if (d.missing_required > 0) {
+    btn.className = 'btn btn-danger';
+    hint.textContent = `有 ${d.missing_required} 本書缺少必填欄位，匯出時將排除這些書目`;
+    alertArea.innerHTML = `<div class="alert alert-error">有 ${d.missing_required} 本書缺少必填欄位（ISBN無效/缺書名/缺定價），匯出時自動排除。請到選書頁填入資料或取消勾選。</div>`;
+  } else if (d.needs_review > 0) {
+    btn.className = 'btn btn-primary';
+    hint.textContent = `有 ${d.needs_review} 本書缺少建議欄位，可繼續匯出`;
+    alertArea.innerHTML = `<div class="alert alert-warn">有 ${d.needs_review} 本書缺少建議欄位（作者/出版社/獲獎項目），仍可匯出。</div>`;
+  } else {
+    btn.className = 'btn btn-primary';
+    hint.textContent = d.total_selected > 0 ? '所有書目均可匯出' : '尚無選書';
+  }
+}
+
+function goExport() {
+  window.location.href = '/export.html';
+}
+</script>
+</body>
+</html>

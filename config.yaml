@@ -1,0 +1,23 @@
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+database:
+  path: "./data/school_lib.db"
+
+auth:
+  default_admin_username: "admin"
+  default_admin_password: "changeme"
+  session_secret_key: "please-change-this-to-a-random-string"
+
+source:
+  local_culture_export_template: "./00_source/高雄市115年度○○區○○國小圖書館（室）充實本土文化相關圖書採購書單(空白).xlsx"
+
+export:
+  output_dir: "./exports"
+  default_price_field: "purchase_price"
+  default_subtotal_mode: "quantity_times_purchase_price"
+
+default_project:
+  name: "115年度本土文化採購"
+  project_type: "local_culture"

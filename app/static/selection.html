@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>選書 — 圖書採購系統</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <span class="nav-title">圖書採購系統</span>
+    <div class="nav-steps">
+      <a href="/projects.html">採購專案</a>
+      <a href="/import.html">匯入</a>
+      <a href="/match.html">比對結果</a>
+      <a href="/selection.html" class="active">選書</a>
+      <a href="/export-check.html">匯出前檢查</a>
+      <a href="/export.html">匯出</a>
+    </div>
+    <div class="nav-right"><span id="user-name"></span> <a href="#" onclick="logout()">登出</a></div>
+  </div>
+</nav>
+<div class="page container">
+  <div class="section-header">
+    <div><h1>選書</h1><p class="subtitle" id="project-label">目前專案：載入中...</p></div>
+    <div class="right">
+      <button class="btn btn-secondary btn-sm" onclick="clearAll()" style="color:#c0392b">清空選書</button>
+    </div>
+  </div>
+
+  <div class="budget-bar" id="budget-bar">
+    <div class="budget-item">
+      <div class="label">已選書目</div>
+      <div class="amount" id="budget-count">0</div>
+    </div>
+    <div class="budget-item">
+      <div class="label">定價小計</div>
+      <div class="amount" id="budget-list">NT$ 0</div>
+    </div>
+    <div class="budget-item">
+      <div class="label">採購單價小計</div>
+      <div class="amount" id="budget-purchase">NT$ 0</div>
+    </div>
+    <div style="margin-left:auto">
+      <a href="/export-check.html" class="btn btn-primary btn-sm">前往匯出前檢查 →</a>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <label>完整度篩選：</label>
+    <select id="filter-comp" onchange="applyFilter()">
+      <option value="">全部</option>
+      <option value="export_ready">可匯出</option>
+      <option value="needs_review">需補資料</option>
+      <option value="missing_required">缺必填</option>
+    </select>
+    <input type="text" id="filter-text" placeholder="搜尋書名..." oninput="applyFilter()" style="width:200px">
+    <span id="result-count" style="font-size:13px;color:#666"></span>
+  </div>
+
+  <div class="card" style="padding:0">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>書名</th><th>作者</th><th>ISBN</th><th>定價</th><th>單價</th>
+          <th>獲獎項目</th><th>完整度</th><th style="width:100px">採購數量</th><th>操作</th>
+        </tr></thead>
+        <tbody id="book-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="/js/common.js"></script>
+<script>
+let pid = null;
+let allBooks = [];
+let selMap = {};
+
+requireAuth().then(async () => {
+  pid = getProjectId();
+  if (!pid) { showToast('請先選擇採購專案'); return; }
+  const proj = await api(`/api/projects/${pid}`);
+  document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
+  await loadData();
+});
+
+async function loadData() {
+  const [books, selData] = await Promise.all([
+    api(`/api/books/matches?project_id=${pid}&match_status=available`),
+    api(`/api/selections/?project_id=${pid}`)
+  ]);
+  allBooks = books;
+  selMap = {};
+  selData.items.forEach(s => { selMap[s.id] = s.selected_quantity; });
+  const summary = selData.summary;
+  document.getElementById('budget-count').textContent = summary.count;
+  document.getElementById('budget-list').textContent = 'NT$ ' + formatCurrency(summary.total_list_price);
+  document.getElementById('budget-purchase').textContent = 'NT$ ' + formatCurrency(summary.total_purchase_price);
+  applyFilter();
+}
+
+function applyFilter() {
+  const comp = document.getElementById('filter-comp').value;
+  const text = document.getElementById('filter-text').value.toLowerCase();
+  let filtered = allBooks;
+  if (comp) filtered = filtered.filter(b => b.completeness_status === comp);
+  if (text) filtered = filtered.filter(b => (b.title || '').toLowerCase().includes(text));
+  document.getElementById('result-count').textContent = `共 ${filtered.length} 筆`;
+  render(filtered);
+}
+
+function render(books) {
+  const tbody = document.getElementById('book-body');
+  if (!books.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;padding:40px">無資料</td></tr>';
+    return;
+  }
+  tbody.innerHTML = books.map(b => {
+    const ov = JSON.parse(b.user_overrides || '{}');
+    const title = ov.title || b.title || '—';
+    const author = ov.author || b.author || '—';
+    const isbn = b.isbn_normalized || b.isbn || '—';
+    const lp = ov.list_price || b.list_price;
+    const pp = ov.purchase_price || b.purchase_price;
+    const award = ov.award_item || b.award_item || '';
+    const qty = selMap[b.id] || 0;
+    return `
+    <tr id="row-${b.id}">
+      <td>${title}</td>
+      <td>${author}</td>
+      <td style="font-size:12px">${isbn}</td>
+      <td>${lp ? formatCurrency(lp) : '—'}</td>
+      <td>${pp ? formatCurrency(pp) : '—'}</td>
+      <td style="font-size:12px;max-width:140px;white-space:normal">${award || '—'}</td>
+      <td>${badge(b.completeness_status || 'unknown')}</td>
+      <td>
+        <input class="qty-input" type="number" min="0" value="${qty}" data-id="${b.id}"
+          onchange="updateQty(${b.id}, this.value)">
+      </td>
+      <td>
+        <a href="#" onclick="toggleEdit(${b.id})" style="font-size:13px">修正資料</a>
+      </td>
+    </tr>
+    <tr id="edit-${b.id}" style="display:none">
+      <td colspan="9">
+        <div class="inline-edit open">
+          <div class="field-row"><label>書名</label><input type="text" value="${(ov.title||b.title||'').replace(/"/g,'&quot;')}" data-field="title" data-bookid="${b.id}"></div>
+          <div class="field-row"><label>作者</label><input type="text" value="${(ov.author||b.author||'').replace(/"/g,'&quot;')}" data-field="author" data-bookid="${b.id}"></div>
+          <div class="field-row"><label>出版社</label><input type="text" value="${(ov.publisher||b.publisher||'').replace(/"/g,'&quot;')}" data-field="publisher" data-bookid="${b.id}"></div>
+          <div class="field-row"><label>獲獎項目</label><input type="text" value="${(ov.award_item||b.award_item||'').replace(/"/g,'&quot;')}" data-field="award_item" data-bookid="${b.id}"></div>
+          <div class="field-row"><label>定價</label><input type="number" value="${ov.list_price||b.list_price||''}" data-field="list_price" data-bookid="${b.id}"></div>
+          <div class="field-row"><label>單價</label><input type="number" value="${ov.purchase_price||b.purchase_price||''}" data-field="purchase_price" data-bookid="${b.id}"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveOverrides(${b.id})">儲存修正</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleEdit(${b.id})">取消</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function updateQty(bookId, val) {
+  const qty = parseInt(val) || 0;
+  try {
+    await api('/api/selections/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: pid, vendor_book_id: bookId, quantity: qty })
+    });
+    selMap[bookId] = qty;
+    await refreshBudget();
+  } catch (e) {
+    showToast('更新失敗：' + e.message);
+  }
+}
+
+async function refreshBudget() {
+  const selData = await api(`/api/selections/?project_id=${pid}`);
+  const s = selData.summary;
+  document.getElementById('budget-count').textContent = s.count;
+  document.getElementById('budget-list').textContent = 'NT$ ' + formatCurrency(s.total_list_price);
+  document.getElementById('budget-purchase').textContent = 'NT$ ' + formatCurrency(s.total_purchase_price);
+}
+
+function toggleEdit(id) {
+  const row = document.getElementById('edit-' + id);
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+async function saveOverrides(bookId) {
+  const inputs = document.querySelectorAll(`[data-bookid="${bookId}"]`);
+  const overrides = {};
+  inputs.forEach(inp => { overrides[inp.dataset.field] = inp.value.trim(); });
+  try {
+    const res = await api(`/api/books/${bookId}/overrides`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overrides })
+    });
+    showToast('修正已儲存');
+    toggleEdit(bookId);
+    await loadData();
+  } catch (e) {
+    showToast('儲存失敗：' + e.message);
+  }
+}
+
+async function clearAll() {
+  if (!confirm('確定清空所有選書紀錄？')) return;
+  await api(`/api/selections/?project_id=${pid}`, { method: 'DELETE' });
+  selMap = {};
+  showToast('已清空選書');
+  await loadData();
+}
+</script>
+</body>
+</html>

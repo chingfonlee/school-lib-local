@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>首頁 — 圖書採購系統</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <span class="nav-title">圖書採購系統</span>
+    <div class="nav-steps">
+      <a href="/projects.html">採購專案</a>
+      <a href="/import.html">匯入</a>
+      <a href="/match.html">比對結果</a>
+      <a href="/selection.html">選書</a>
+      <a href="/export-check.html">匯出前檢查</a>
+      <a href="/export.html">匯出</a>
+    </div>
+    <div class="nav-right"><span id="user-name"></span> <a href="#" onclick="logout()">登出</a></div>
+  </div>
+</nav>
+<div class="page container">
+  <h1>首頁</h1>
+  <div id="project-banner" class="alert alert-info" style="margin-bottom:20px"></div>
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card gray"><div class="num" id="stat-holdings">—</div><div class="label">館藏筆數</div></div>
+    <div class="stat-card gray"><div class="num" id="stat-vendor">—</div><div class="label">書商書單</div></div>
+    <div class="stat-card green"><div class="num" id="stat-available">—</div><div class="label">可採購</div></div>
+    <div class="stat-card gray"><div class="num" id="stat-selection">—</div><div class="label">已選書</div></div>
+    <div class="stat-card gray"><div class="num" id="stat-last-export">—</div><div class="label">上次匯出</div></div>
+  </div>
+  <div class="card">
+    <h2>快速導覽</h2>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+      <a class="btn btn-secondary" href="/import.html">匯入書單</a>
+      <a class="btn btn-secondary" href="/match.html">查看比對結果</a>
+      <a class="btn btn-secondary" href="/selection.html">選書</a>
+      <a class="btn btn-primary" href="/export.html">產生採購書單</a>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="/js/common.js"></script>
+<script>
+requireAuth().then(async () => {
+  const pid = getProjectId();
+  if (!pid) {
+    document.getElementById('project-banner').textContent = '尚未選擇採購專案，請先到「採購專案」頁面選擇';
+    document.getElementById('project-banner').className = 'alert alert-warn';
+    return;
+  }
+  const [proj, stats, selSummary, jobs] = await Promise.all([
+    api(`/api/projects/${pid}`),
+    api(`/api/books/stats?project_id=${pid}`),
+    api(`/api/selections/?project_id=${pid}`),
+    api(`/api/exports/jobs?project_id=${pid}`),
+  ]);
+  document.getElementById('project-banner').textContent =
+    `目前專案：${proj.name}（${proj.project_type === 'local_culture' ? '本土文化採購' : '一般圖書採購'}）`;
+  document.getElementById('stat-holdings').textContent = stats.total_holdings || 0;
+  document.getElementById('stat-vendor').textContent = stats.total_vendor_books || 0;
+  document.getElementById('stat-available').textContent = (stats.match_status || {}).available || 0;
+  document.getElementById('stat-selection').textContent = selSummary.summary.count || 0;
+  if (jobs.length > 0) {
+    const d = new Date(jobs[0].exported_at);
+    document.getElementById('stat-last-export').textContent = d.toLocaleDateString('zh-TW');
+  } else {
+    document.getElementById('stat-last-export').textContent = '無';
+  }
+});
+</script>
+</body>
+</html>

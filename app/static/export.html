@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>匯出 — 圖書採購系統</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <span class="nav-title">圖書採購系統</span>
+    <div class="nav-steps">
+      <a href="/projects.html">採購專案</a>
+      <a href="/import.html">匯入</a>
+      <a href="/match.html">比對結果</a>
+      <a href="/selection.html">選書</a>
+      <a href="/export-check.html">匯出前檢查</a>
+      <a href="/export.html" class="active">匯出</a>
+    </div>
+    <div class="nav-right"><span id="user-name"></span> <a href="#" onclick="logout()">登出</a></div>
+  </div>
+</nav>
+<div class="page container">
+  <h1>產生採購書單</h1>
+  <p class="subtitle" id="project-label">目前專案：載入中...</p>
+
+  <div class="card">
+    <h2>匯出設定</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label>學校名稱 <span style="color:#c0392b">*</span></label>
+        <input type="text" id="school-name" placeholder="例：○○國小">
+      </div>
+      <div class="form-group">
+        <label>核定金額（選填）</label>
+        <input type="number" id="budget" placeholder="例：45000">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>定價欄顯示</label>
+        <select id="price-field">
+          <option value="purchase_price">採購單價</option>
+          <option value="list_price">定價</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>小計計算方式</label>
+        <select id="subtotal-mode">
+          <option value="quantity_times_purchase_price">數量 × 採購單價</option>
+          <option value="quantity_times_list_price">數量 × 定價</option>
+        </select>
+      </div>
+    </div>
+    <div id="export-alert" class="alert alert-warn" style="display:none;margin-bottom:12px"></div>
+    <button class="btn btn-primary" id="export-btn" onclick="doExport()">產生 Excel</button>
+    <span id="export-status" style="margin-left:12px;font-size:14px;color:#6e6e73"></span>
+  </div>
+
+  <div class="card" id="preview-card">
+    <h2>選書預覽（可匯出書目）</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th>書名</th><th>作者</th><th>ISBN</th><th>定價</th><th>單價</th>
+          <th>數量</th><th>獲獎項目</th><th>完整度</th>
+        </tr></thead>
+        <tbody id="preview-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>匯出紀錄</h2>
+    <div id="job-list"><p style="color:#999">無紀錄</p></div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="/js/common.js"></script>
+<script>
+let pid = null;
+
+requireAuth().then(async () => {
+  pid = getProjectId();
+  if (!pid) { showToast('請先選擇採購專案'); return; }
+  const proj = await api(`/api/projects/${pid}`);
+  document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
+  document.getElementById('price-field').value = proj.price_field;
+  document.getElementById('subtotal-mode').value = proj.subtotal_mode;
+  await Promise.all([loadPreview(), loadJobs()]);
+});
+
+async function loadPreview() {
+  const pf = document.getElementById('price-field').value;
+  const check = await api(`/api/exports/check?project_id=${pid}&price_field=${pf}`);
+  const sel = await api(`/api/selections/?project_id=${pid}`);
+  const tbody = document.getElementById('preview-body');
+
+  const items = sel.items.filter(b => b.match_status === 'available' && b.selected_quantity > 0);
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;padding:30px">尚無選書</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map((b, i) => {
+    const ov = JSON.parse(b.user_overrides || '{}');
+    return `<tr>
+      <td>${i+1}</td>
+      <td>${ov.title||b.title||'—'}</td>
+      <td>${ov.author||b.author||'—'}</td>
+      <td style="font-size:12px">${b.isbn_normalized||b.isbn||'—'}</td>
+      <td>${b.list_price ? formatCurrency(b.list_price) : '—'}</td>
+      <td>${b.purchase_price ? formatCurrency(b.purchase_price) : '—'}</td>
+      <td>${b.selected_quantity}</td>
+      <td style="font-size:12px;max-width:140px;white-space:normal">${ov.award_item||b.award_item||'—'}</td>
+      <td>${badge(b.completeness_status||'unknown')}</td>
+    </tr>`;
+  }).join('');
+
+  if (check.missing_required > 0) {
+    document.getElementById('export-alert').style.display = 'block';
+    document.getElementById('export-alert').textContent =
+      `注意：有 ${check.missing_required} 本書缺少必填欄位，匯出時將自動排除這些書目。`;
+  }
+}
+
+async function loadJobs() {
+  const jobs = await api(`/api/exports/jobs?project_id=${pid}`);
+  const el = document.getElementById('job-list');
+  if (!jobs.length) { el.innerHTML = '<p style="color:#999">無匯出紀錄</p>'; return; }
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>時間</th><th>校名</th><th>定價設定</th><th>小計設定</th><th>筆數</th><th>總金額</th><th>下載</th></tr></thead>
+    <tbody>${jobs.map(j => `
+      <tr>
+        <td style="white-space:nowrap">${new Date(j.exported_at).toLocaleString('zh-TW')}</td>
+        <td>${j.school_name||'—'}</td>
+        <td>${j.price_field === 'purchase_price' ? '採購單價' : '定價'}</td>
+        <td>${j.subtotal_mode === 'quantity_times_purchase_price' ? '數量×單價' : '數量×定價'}</td>
+        <td>${j.record_count||0}</td>
+        <td>NT$ ${formatCurrency(j.total_amount)}</td>
+        <td><a href="/api/exports/download/${j.id}" class="btn btn-secondary btn-sm">下載</a></td>
+      </tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+async function doExport() {
+  const school = document.getElementById('school-name').value.trim();
+  if (!school) { showToast('請填入學校名稱'); return; }
+  const budget = document.getElementById('budget').value;
+  const btn = document.getElementById('export-btn');
+  const status = document.getElementById('export-status');
+  btn.disabled = true;
+  status.textContent = '匯出中...';
+  try {
+    const res = await api('/api/exports/local-culture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_id: pid,
+        school_name: school,
+        approved_budget: budget ? parseFloat(budget) : null,
+        price_field: document.getElementById('price-field').value,
+        subtotal_mode: document.getElementById('subtotal-mode').value,
+      })
+    });
+    status.textContent = '';
+    showToast('匯出完成！');
+    await loadJobs();
+    // Auto download
+    window.location.href = `/api/exports/download/${res.job_id}`;
+  } catch (e) {
+    status.textContent = '';
+    showToast('匯出失敗：' + e.message, 5000);
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
