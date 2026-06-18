@@ -245,34 +245,17 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 - 使用者手動調整的欄位對應可儲存為 `import_profile`，供下次匯入套用
 - column_mappings 格式：`{"來源欄名": "系統欄名"}`，如 `{"條碼": "isbn", "定價": "list_price"}`
 
-#### 4.4 獲獎項目與政策議題分離（import_service.py 頂端常數）
+#### 4.4 獲獎項目處理（local_culture V1：直接保留原文）
 
-定義 `POLICY_TOPIC_KEYWORDS` 常數清單：
+V1 `local_culture` 匯入時，`award_item` 欄位**直接複製書商來源欄「獲獎項目」的原始文字**：
 
 ```python
-POLICY_TOPIC_KEYWORDS = [
-    "SDGs", "SDG", "SEL",
-    "性別平等", "人權", "人權教育",
-    "環境教育", "海洋教育", "生命教育", "閱讀素養",
-]
+book["award_item"] = raw_row.get("獲獎項目") or None
 ```
 
-每筆 `vendor_books` 匯入時，對 `award_item` 原始值執行 `split_award_and_policy(raw_award: str) -> dict`：
+不執行任何關鍵字拆分，不自動填值，不設 award_notes。`policy_topic` 與 `award_notes` 保持 NULL。
 
-1. 將原始值以 `、`、`,`、`；`、`;` 分割為多個 token
-2. 逐一判斷每個 token 是否包含 `POLICY_TOPIC_KEYWORDS` 中的關鍵字
-3. 分離：
-   - 含關鍵字的 token → 加入 `policy_topic`（串接）
-   - 不含關鍵字的 token → 加入 `award_item`（串接）
-4. 若分離後 `award_item` 為空（全為政策議題）：
-   - `award_item` 填入「其他國內外具公信力單位辦理之獎項」
-   - `award_notes` 設為「待確認：{原始值} 主題書單是否可列為推薦來源」
-5. 若分離後 `award_item` 非空（有有效獎項）：
-   - `award_item` 保留有效獎項
-   - `policy_topic` 記錄政策議題
-   - `award_notes` 保持空白
-
-此偵測為輔助功能；使用者可透過 user_overrides 手動修正任何欄位，也可清除 award_notes 標記。
+> V2 general_books 預留：屆時可在此步驟加入 POLICY_TOPIC_KEYWORDS 關鍵字偵測與 split_award_and_policy 函式，將 SDGs / SEL 等政策議題標籤分離至 policy_topic，並在只有政策議題時設定 award_notes「待確認」標記。V1 不實作此邏輯。
 
 ### Step 5：Match Service（app/services/match_service.py）
 
@@ -301,13 +284,12 @@ POLICY_TOPIC_KEYWORDS = [
 
 注意：ISBN 有效性已由 isbn_status 負責；completeness_status 不重複檢查 isbn。
 
-**required_review 檢查（通過 blocking 後，任一缺失或異常 → `needs_review`）：**
+**required_review 檢查（通過 blocking 後，任一缺失 → `needs_review`）：**
 - author 非空
 - publisher 非空
-- award_item 非空（local_culture 專用）
-- `award_notes` 為空（若含「待確認」標記，即使 award_item 有值仍強制 needs_review）
+- award_item 非空（local_culture 專用；缺少時提醒，不阻擋匯出）
 
-award_notes 的判斷：`award_notes and "待確認" in award_notes` 為 True → needs_review，不論其他欄位是否完整。
+V1 local_culture 不使用 award_notes 進行強制 needs_review 判斷。
 
 **全部通過 → `export_ready`**
 
