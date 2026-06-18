@@ -69,10 +69,15 @@ let pid = null;
 requireAuth().then(async () => {
   pid = getProjectId();
   if (!pid) { showToast('請先選擇採購專案'); return; }
-  const proj = await api(`/api/projects/${pid}`);
-  document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
-  await loadStats();
-  await loadBooks();
+  try {
+    const proj = await api(`/api/projects/${pid}`);
+    document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
+    await loadStats();
+    await loadBooks();
+  } catch {
+    clearProject();
+    showToast('請先選擇採購專案');
+  }
 });
 
 async function loadStats() {

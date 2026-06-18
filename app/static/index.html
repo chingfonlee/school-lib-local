@@ -52,23 +52,29 @@ requireAuth().then(async () => {
     document.getElementById('project-banner').className = 'alert alert-warn';
     return;
   }
-  const [proj, stats, selSummary, jobs] = await Promise.all([
-    api(`/api/projects/${pid}`),
-    api(`/api/books/stats?project_id=${pid}`),
-    api(`/api/selections/?project_id=${pid}`),
-    api(`/api/exports/jobs?project_id=${pid}`),
-  ]);
-  document.getElementById('project-banner').textContent =
-    `目前專案：${proj.name}（${proj.project_type === 'local_culture' ? '本土文化採購' : '一般圖書採購'}）`;
-  document.getElementById('stat-holdings').textContent = stats.total_holdings || 0;
-  document.getElementById('stat-vendor').textContent = stats.total_vendor_books || 0;
-  document.getElementById('stat-available').textContent = (stats.match_status || {}).available || 0;
-  document.getElementById('stat-selection').textContent = selSummary.summary.count || 0;
-  if (jobs.length > 0) {
-    const d = new Date(jobs[0].exported_at);
-    document.getElementById('stat-last-export').textContent = d.toLocaleDateString('zh-TW');
-  } else {
-    document.getElementById('stat-last-export').textContent = '無';
+  try {
+    const [proj, stats, selSummary, jobs] = await Promise.all([
+      api(`/api/projects/${pid}`),
+      api(`/api/books/stats?project_id=${pid}`),
+      api(`/api/selections/?project_id=${pid}`),
+      api(`/api/exports/jobs?project_id=${pid}`),
+    ]);
+    document.getElementById('project-banner').textContent =
+      `目前專案：${proj.name}（${proj.project_type === 'local_culture' ? '本土文化採購' : '一般圖書採購'}）`;
+    document.getElementById('stat-holdings').textContent = stats.total_holdings || 0;
+    document.getElementById('stat-vendor').textContent = stats.total_vendor_books || 0;
+    document.getElementById('stat-available').textContent = (stats.match_status || {}).available || 0;
+    document.getElementById('stat-selection').textContent = selSummary.summary.count || 0;
+    if (jobs.length > 0) {
+      const d = new Date(jobs[0].exported_at);
+      document.getElementById('stat-last-export').textContent = d.toLocaleDateString('zh-TW');
+    } else {
+      document.getElementById('stat-last-export').textContent = '無';
+    }
+  } catch {
+    clearProject();
+    document.getElementById('project-banner').textContent = '請先選擇採購專案';
+    document.getElementById('project-banner').className = 'alert alert-warn';
   }
 });
 </script>

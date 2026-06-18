@@ -184,8 +184,15 @@ requireAuth().then(async () => {
   pid = getProjectId();
   const el = document.getElementById('project-label');
   if (pid) {
-    const proj = await api(`/api/projects/${pid}`);
-    el.textContent = `目前專案：${proj.name}`;
+    try {
+      const proj = await api(`/api/projects/${pid}`);
+      el.textContent = `目前專案：${proj.name}`;
+    } catch {
+      clearProject();
+      pid = null;
+      el.textContent = '請先選擇採購專案';
+      document.getElementById('vendor-alert').style.display = 'block';
+    }
   } else {
     el.textContent = '尚未選擇採購專案';
     document.getElementById('vendor-alert').style.display = 'block';

@@ -1,11 +1,28 @@
 const PROJECT_KEY = 'current_project_id';
 const PROJECT_NAME_KEY = 'current_project_name';
 
-function getProjectId() { return parseInt(sessionStorage.getItem(PROJECT_KEY)) || null; }
-function getProjectName() { return sessionStorage.getItem(PROJECT_NAME_KEY) || '未選擇專案'; }
+function getProjectId() {
+  const s = parseInt(sessionStorage.getItem(PROJECT_KEY));
+  if (s > 0) return s;
+  const l = parseInt(localStorage.getItem(PROJECT_KEY));
+  return l > 0 ? l : null;
+}
+function getProjectName() {
+  return sessionStorage.getItem(PROJECT_NAME_KEY)
+    || localStorage.getItem(PROJECT_NAME_KEY)
+    || '未選擇專案';
+}
 function setProject(id, name) {
   sessionStorage.setItem(PROJECT_KEY, id);
   sessionStorage.setItem(PROJECT_NAME_KEY, name);
+  localStorage.setItem(PROJECT_KEY, id);
+  localStorage.setItem(PROJECT_NAME_KEY, name);
+}
+function clearProject() {
+  sessionStorage.removeItem(PROJECT_KEY);
+  sessionStorage.removeItem(PROJECT_NAME_KEY);
+  localStorage.removeItem(PROJECT_KEY);
+  localStorage.removeItem(PROJECT_NAME_KEY);
 }
 
 async function api(url, options = {}) {
@@ -31,6 +48,7 @@ async function requireAuth() {
 
 async function logout() {
   await fetch('/api/auth/logout', { method: 'POST' });
+  clearProject();
   window.location.href = '/login.html';
 }
 
