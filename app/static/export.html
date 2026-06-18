@@ -85,16 +85,18 @@ let pid = null;
 requireAuth().then(async () => {
   pid = getProjectId();
   if (!pid) { showToast('請先選擇採購專案'); return; }
+  let proj;
   try {
-    const proj = await api(`/api/projects/${pid}`);
-    document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
-    document.getElementById('price-field').value = proj.price_field;
-    document.getElementById('subtotal-mode').value = proj.subtotal_mode;
-    await Promise.all([loadPreview(), loadJobs()]);
+    proj = await api(`/api/projects/${pid}`);
   } catch {
     clearProject();
     showToast('請先選擇採購專案');
+    return;
   }
+  document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
+  document.getElementById('price-field').value = proj.price_field;
+  document.getElementById('subtotal-mode').value = proj.subtotal_mode;
+  await Promise.all([loadPreview(), loadJobs()]);
 });
 
 async function loadPreview() {
