@@ -14,11 +14,11 @@ updated: 2026-06-18
 ## Active Tasks
 
 - id: task-local-cultural-books-mvp
-  status: active
-  branch: feat/task-local-cultural-books-mvp
+  status: done
+  branch: ""
   base_branch: main
-  last_log: 2026-06-18-mvp-impl.md
-  last_agent: claude
+  last_log: 2026-06-18-212339.md
+  last_agent: codex
 
 ## 後續文件需求
 
