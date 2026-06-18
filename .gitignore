@@ -1,0 +1,19 @@
+# Runtime data — do not commit
+data/
+exports/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# Source data — place your own files here, do not commit real school data
+00_source/
+
+# OS
+.DS_Store
+Thumbs.db
