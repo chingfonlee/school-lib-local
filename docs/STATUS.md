@@ -1,6 +1,6 @@
 ---
-session_state: closed
-current_action: idle
+session_state: open
+current_action: executing
 current_task: task-local-cultural-books-mvp
 planning_task: ""
 planning_type: ""

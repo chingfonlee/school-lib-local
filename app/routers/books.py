@@ -18,7 +18,7 @@ async def get_matches(
     user_id: int = Depends(require_auth),
 ):
     conn = get_connection()
-    where_clauses = ["ib.project_id = ?"]
+    where_clauses = ["ib.project_id = ?", "vb.isbn_status = 'valid'"]
     params = [project_id]
 
     if match_status:
@@ -72,7 +72,7 @@ async def get_stats(
         "SELECT vb.completeness_status, COUNT(*) as cnt "
         "FROM vendor_books vb "
         "JOIN import_batches ib ON ib.id = vb.batch_id "
-        "WHERE ib.project_id = ? "
+        "WHERE ib.project_id = ? AND vb.isbn_status = 'valid' "
         "GROUP BY vb.completeness_status",
         (project_id,),
     ).fetchall()
@@ -80,7 +80,21 @@ async def get_stats(
     total_vendor = conn.execute(
         "SELECT COUNT(*) FROM vendor_books vb "
         "JOIN import_batches ib ON ib.id = vb.batch_id "
-        "WHERE ib.project_id = ?",
+        "WHERE ib.project_id = ? AND vb.isbn_status = 'valid'",
+        (project_id,),
+    ).fetchone()[0]
+
+    ignored_missing_isbn = conn.execute(
+        "SELECT COUNT(*) FROM vendor_books vb "
+        "JOIN import_batches ib ON ib.id = vb.batch_id "
+        "WHERE ib.project_id = ? AND vb.isbn_status = 'missing'",
+        (project_id,),
+    ).fetchone()[0]
+
+    ignored_invalid_isbn = conn.execute(
+        "SELECT COUNT(*) FROM vendor_books vb "
+        "JOIN import_batches ib ON ib.id = vb.batch_id "
+        "WHERE ib.project_id = ? AND vb.isbn_status = 'invalid'",
         (project_id,),
     ).fetchone()[0]
 
@@ -92,6 +106,8 @@ async def get_stats(
 
     return {
         "total_vendor_books": total_vendor,
+        "ignored_missing_isbn": ignored_missing_isbn,
+        "ignored_invalid_isbn": ignored_invalid_isbn,
         "total_holdings": holdings_count,
         "match_status": {r["match_status"]: r["cnt"] for r in match_rows},
         "completeness_status": {r["completeness_status"]: r["cnt"] for r in comp_rows},

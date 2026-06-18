@@ -27,7 +27,7 @@ def run_match(project_id: int) -> dict:
         "SELECT vb.id, vb.isbn_normalized, vb.isbn_status, vb.title "
         "FROM vendor_books vb "
         "JOIN import_batches ib ON ib.id = vb.batch_id "
-        "WHERE ib.project_id = ?",
+        "WHERE ib.project_id = ? AND vb.isbn_status = 'valid'",
         (project_id,),
     ).fetchall()
 
@@ -48,12 +48,7 @@ def run_match(project_id: int) -> dict:
 
     rows_to_insert = []
     for vb in vbooks:
-        isbn_status = vb["isbn_status"]
-        if isbn_status == "missing":
-            status = "missing_isbn"
-        elif isbn_status == "invalid":
-            status = "invalid_isbn"
-        elif vb["isbn_normalized"] in isbn_index:
+        if vb["isbn_normalized"] in isbn_index:
             status = "already_owned"
         else:
             status = "available"
