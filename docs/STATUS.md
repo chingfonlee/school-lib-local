@@ -1,11 +1,11 @@
 ---
-session_state: open
-current_action: executing
-current_task: task-remember-last-project
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
-last_agent: claude
+last_agent: codex
 updated: 2026-06-18
 ---
 
@@ -14,11 +14,11 @@ updated: 2026-06-18
 ## Active Tasks
 
 - id: task-remember-last-project
-  status: active
-  branch: feat/task-remember-last-project
+  status: done
+  branch: ""
   base_branch: main
-  last_log: ""
-  last_agent: ""
+  last_log: 2026-06-18-231934.md
+  last_agent: codex
 
 - id: task-local-cultural-books-mvp
   status: done
