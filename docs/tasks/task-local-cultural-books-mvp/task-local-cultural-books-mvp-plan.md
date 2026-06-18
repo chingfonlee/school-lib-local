@@ -180,16 +180,35 @@ CREATE TABLE IF NOT EXISTS selection_items (
     UNIQUE(project_id, vendor_book_id)
 );
 
+CREATE TABLE IF NOT EXISTS export_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,           -- 識別鍵，如 local_culture_kaohsiung_115
+    project_type TEXT NOT NULL CHECK(project_type IN ('local_culture', 'general_books')),
+    template_file_path TEXT NOT NULL,    -- 空白範本的完整路徑（相對於專案根目錄）
+    sheet_name TEXT,                     -- NULL 表示第一個 sheet
+    header_row INTEGER NOT NULL DEFAULT 3,  -- 範本中欄位標題列號（1-based）
+    data_start_row INTEGER NOT NULL DEFAULT 6,  -- 書目資料起始列號（1-based）
+    max_rows INTEGER NOT NULL DEFAULT 50,   -- 可填入資料的最大列數
+    school_name_cell TEXT NOT NULL DEFAULT 'A3',    -- 校名填入儲存格
+    approved_budget_cell TEXT NOT NULL DEFAULT 'E3', -- 核定金額儲存格
+    total_quantity_cell TEXT,               -- 總冊數合計儲存格，如 F56
+    total_amount_cell TEXT,                 -- 總金額合計儲存格，如 H56
+    column_mappings TEXT NOT NULL,          -- JSON: {"sort_order":"A","title":"B",...}
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS export_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id INTEGER NOT NULL REFERENCES procurement_projects(id),
+    export_template_id INTEGER REFERENCES export_templates(id),
     school_name TEXT,
     approved_budget REAL,
     price_field TEXT NOT NULL CHECK(price_field IN ('list_price', 'purchase_price')),
     subtotal_mode TEXT NOT NULL CHECK(subtotal_mode IN (
         'quantity_times_list_price', 'quantity_times_purchase_price'
     )),
-    template_path TEXT,              -- 匯出時使用的範本完整路徑
+    template_path TEXT,              -- 匯出時快照的範本路徑（export_template 可能日後更換）
     output_filename TEXT,
     output_path TEXT,
     exported_by INTEGER REFERENCES users(id),
@@ -206,7 +225,9 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 `app/database.py` 實作簡易 migration runner：啟動時掃描 `migrations/` 目錄，依序執行未記錄於 `schema_migrations` 的 SQL 檔。
 
-`app/database.py` 另實作 `ensure_initial_data()`：若 `procurement_projects` 為空，自動建立一筆預設 `local_culture` 專案，從 config.yaml 讀取 price_field / subtotal_mode 預設值。
+`app/database.py` 另實作 `ensure_initial_data()`：
+1. 若 `procurement_projects` 為空，自動建立一筆預設 `local_culture` 專案，從 config.yaml 讀取 price_field / subtotal_mode 預設值。
+2. 若 `export_templates` 為空（或 config.yaml 有定義但 DB 無對應 name），從 config.yaml 的 `export_templates` 區段 seed 至 DB。相同 name 不重複建立（`INSERT OR IGNORE`）。
 
 ### Step 3：ISBN Normalization（app/services/isbn_service.py）
 
@@ -409,25 +430,32 @@ class ExportSettings:
     approved_budget: float | None
     price_field: str              # "list_price" or "purchase_price"
     subtotal_mode: str            # "quantity_times_list_price" or "quantity_times_purchase_price"
-    template_path: str
+    export_template_name: str     # export_templates.name，如 "local_culture_kaohsiung_115"
     output_dir: str
     exported_by: int
 ```
 
 #### 10.3 export_local_culture(settings) -> str
 
-1. 呼叫 `validation_service.check_export_readiness`；若有 `missing_required` 書目，拋出例外並回報哪本書缺哪個欄位
-2. 複製範本至 `exports/` 目錄，輸出檔名含日期時間（`本土文化採購書單_{YYYYMMDD}_{HHmmss}.xlsx`）
-3. `openpyxl.load_workbook(copy_path)` 開啟複製檔
-4. 填入校名、核定金額（若有）至 `TEMPLATE_CONFIG` 指定的儲存格
-5. 讀取 selection_items join vendor_books，依 vendor_seq 或 id 排序
-6. 逐列填入，每個欄位呼叫 `resolve_field`；定價欄依 `price_field`；小計依 `subtotal_mode`
-7. 填入合計行（總冊數、依 subtotal_mode 計算的總金額）
-8. 儲存輸出檔
-9. 建立 `export_jobs` 紀錄（記錄 template_path）
-10. 回傳輸出檔路徑
+export_service **不使用硬編碼的 TEMPLATE_CONFIG**，改從 `export_templates` DB 表讀取所有結構資訊：
 
-**重要**：`00_source/` 原始範本以 `openpyxl.load_workbook(..., read_only=True)` 僅讀取，每次匯出複製至 `exports/` 後操作，原始範本不被寫入。
+1. 從 DB 讀取 `export_templates WHERE name = settings.export_template_name`，取得 template 設定（column_mappings、data_start_row、school_name_cell 等）
+2. 呼叫 `validation_service.check_export_readiness`；若有 `missing_required` 書目，拋出例外並回報哪本書缺哪個欄位
+3. 複製範本至 `exports/` 目錄（`shutil.copy2`），輸出檔名含日期時間（`本土文化採購書單_{YYYYMMDD}_{HHmmss}.xlsx`）
+4. `openpyxl.load_workbook(copy_path)` 開啟複製檔；若 sheet_name 非 NULL 則選擇對應 sheet，否則用 active sheet
+5. 依 `school_name_cell` 填入校名；依 `approved_budget_cell` 填入核定金額（若有）
+6. 讀取 selection_items join vendor_books，依 vendor_seq 或 id 排序
+7. 從 `data_start_row` 開始逐列填入，每個欄位：
+   - 欄位字母由 `column_mappings[field]` 取得
+   - 欄位值由 `resolve_field` 取值
+   - 定價欄（`price`）依 `price_field` 選擇 list_price 或 purchase_price
+   - 小計欄依 `subtotal_mode` 計算
+8. 依 `total_quantity_cell` / `total_amount_cell` 填入合計值（若設定非 NULL）
+9. 儲存輸出檔
+10. 建立 `export_jobs` 紀錄（記錄 export_template_id 與 template_path 快照）
+11. 回傳輸出檔路徑
+
+**重要**：`00_source/` 原始範本以 `shutil.copy2` 複製至 `exports/` 後操作；原始範本使用 `openpyxl.load_workbook(..., read_only=True)` 確保不被寫入。
 
 ### Step 11：FastAPI Routers（app/routers/）
 
@@ -612,6 +640,7 @@ auth:
   session_secret_key: "please-change-this-to-a-random-string"
 
 source:
+  # 舊欄位保留作 fallback，新設定以 export_templates 為主
   local_culture_export_template: "./00_source/高雄市115年度○○區○○國小圖書館（室）充實本土文化相關圖書採購書單(空白).xlsx"
 
 export:
@@ -622,6 +651,32 @@ export:
 default_project:
   name: "115年度本土文化採購"
   project_type: "local_culture"
+  export_template_name: "local_culture_kaohsiung_115"
+
+# 匯出範本設定（V1 由此 seed 至 SQLite export_templates）
+export_templates:
+  - name: "local_culture_kaohsiung_115"
+    project_type: "local_culture"
+    template_file_path: "./00_source/高雄市115年度○○區○○國小圖書館（室）充實本土文化相關圖書採購書單(空白).xlsx"
+    sheet_name: null          # null 表示第一個 sheet
+    header_row: 4             # 第 4 列為欄位標題（1-based）
+    data_start_row: 6         # 書目資料從第 6 列開始（1-based）
+    max_rows: 50              # 最多 50 本（第 6–55 列）
+    school_name_cell: "A3"
+    approved_budget_cell: "E3"
+    total_quantity_cell: "F56"
+    total_amount_cell: "H56"
+    column_mappings:
+      sort_order: "A"
+      title: "B"
+      author: "C"
+      publisher: "D"
+      isbn: "E"
+      quantity: "F"
+      price: "G"
+      subtotal: "H"
+      award_item: "I"
+      notes: "J"
 ```
 
 ### Step 16：requirements.txt
