@@ -24,7 +24,7 @@ VENDOR_COLUMN_HINTS = {
     "vendor_seq": ["序號", "編號", "no", "no."],
     "title": ["書名", "title"],
     "author": ["作者", "author"],
-    "isbn": ["條碼", "isbn", "isbn碼", "isbn號"],
+    "isbn": ["條碼", "isbn", "isbn碼", "isbn號", "條形碼"],
     "publish_date": ["出版日期", "出版年", "publish_date"],
     "list_price": ["定價", "list_price"],
     "purchase_price": ["單價", "採購價", "purchase_price"],
@@ -34,8 +34,8 @@ VENDOR_COLUMN_HINTS = {
 
 
 def _match_columns(df_columns: list[str], hints: dict) -> tuple[dict, list[str]]:
+    """Returns (mapping {src_col: sys_field}, unmapped_sys_fields)."""
     mapping = {}
-    unmapped_sources = []
     lower_cols = {c.strip().lower(): c for c in df_columns}
     for field, candidates in hints.items():
         for cand in candidates:
@@ -43,10 +43,237 @@ def _match_columns(df_columns: list[str], hints: dict) -> tuple[dict, list[str]]
                 mapping[lower_cols[cand.lower()]] = field
                 break
     mapped_targets = set(mapping.values())
-    for field in hints:
-        if field not in mapped_targets:
-            unmapped_sources.append(field)
-    return mapping, unmapped_sources
+    unmapped = [field for field in hints if field not in mapped_targets]
+    return mapping, unmapped
+
+
+def _detect_header_row(file_bytes: bytes, engine: str, hints: dict, sheet_name=0) -> int:
+    """Score first 20 rows and return the best 0-based header row index."""
+    preview = pd.read_excel(
+        io.BytesIO(file_bytes),
+        engine=engine,
+        sheet_name=sheet_name,
+        header=None,
+        nrows=20,
+        dtype=str,
+    )
+    hint_tokens = {
+        str(token).strip().lower()
+        for candidates in hints.values()
+        for token in candidates
+    }
+    best_row = 0
+    best_score = -1
+    for idx, row in preview.iterrows():
+        values = [str(v).strip().lower() for v in row.tolist() if pd.notna(v)]
+        score = sum(1 for value in values if value in hint_tokens)
+        if score > best_score:
+            best_score = score
+            best_row = int(idx)
+    return best_row
+
+
+def _read_excel_with_detected_header(
+    file_bytes: bytes,
+    engine: str,
+    hints: dict,
+    sheet_name=0,
+) -> pd.DataFrame:
+    best_row = _detect_header_row(file_bytes, engine, hints, sheet_name=sheet_name)
+    return pd.read_excel(
+        io.BytesIO(file_bytes),
+        engine=engine,
+        sheet_name=sheet_name,
+        header=best_row,
+        dtype=str,
+    )
+
+
+def _is_blank_or_total_row(values: list) -> bool:
+    cleaned = [str(v).strip() for v in values if v not in (None, "") and not pd.isna(v)]
+    if not cleaned:
+        return True
+    return any(value in {"合計", "總計"} for value in cleaned)
+
+
+def preview_excel(
+    file_bytes: bytes,
+    filename: str,
+    sheet_name: str | None = None,
+    header_row: int | None = None,
+) -> dict:
+    """
+    Preview Excel without writing to DB.
+    Returns sheet list, guessed header row (0-based), source columns, and suggested field mappings.
+    header_row input is 0-based (pandas convention).
+    """
+    engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
+
+    if engine == "openpyxl":
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+        sheets = list(wb.sheetnames)
+        wb.close()
+    else:
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=file_bytes)
+        sheets = wb.sheet_names()
+
+    active_sheet = sheet_name if sheet_name else (sheets[0] if sheets else 0)
+
+    if header_row is None:
+        guessed_header_row = _detect_header_row(
+            file_bytes, engine, VENDOR_COLUMN_HINTS, sheet_name=active_sheet
+        )
+    else:
+        guessed_header_row = header_row
+
+    df = pd.read_excel(
+        io.BytesIO(file_bytes),
+        engine=engine,
+        sheet_name=active_sheet,
+        header=guessed_header_row,
+        dtype=str,
+    )
+
+    source_columns = []
+    for c in df.columns:
+        cs = str(c).strip()
+        if cs and not cs.lower().startswith("unnamed:"):
+            source_columns.append(cs)
+
+    src_to_sys, unmapped_sys = _match_columns(source_columns, VENDOR_COLUMN_HINTS)
+    suggested_mappings = {v: k for k, v in src_to_sys.items()}
+
+    mapped_source = set(src_to_sys.keys())
+    extra_source_columns = [c for c in source_columns if c not in mapped_source]
+
+    return {
+        "sheets": sheets,
+        "active_sheet": str(active_sheet),
+        "guessed_header_row": guessed_header_row,
+        "source_columns": source_columns,
+        "suggested_mappings": suggested_mappings,
+        "unmapped_system_fields": unmapped_sys,
+        "extra_source_columns": extra_source_columns,
+    }
+
+
+def confirm_import(
+    file_bytes: bytes,
+    filename: str,
+    project_id: int,
+    sheet_name: str | None,
+    header_row: int,
+    mappings: dict,
+    extra_field_settings: list,
+    user_id: int,
+    profile_id: int | None = None,
+) -> dict:
+    """
+    Formally import vendor books using user-confirmed mappings (sys_field → src_col).
+    header_row is 0-based.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
+    sheet = sheet_name if sheet_name else 0
+
+    df = pd.read_excel(
+        io.BytesIO(file_bytes),
+        engine=engine,
+        sheet_name=sheet,
+        header=header_row,
+        dtype=str,
+    )
+    df.columns = [str(c).strip() for c in df.columns]
+
+    conn = get_connection()
+    batch_row = conn.execute(
+        "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
+        "imported_by, imported_at) VALUES (?, 'vendor_books', ?, ?, ?, ?)",
+        (project_id, filename, profile_id, user_id, now),
+    )
+    batch_id = batch_row.lastrowid
+
+    records_inserted = 0
+    skipped_count = 0
+
+    for enum_idx, (_, row) in enumerate(df.iterrows()):
+        raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
+        source_row_number = header_row + 2 + enum_idx  # 1-based Excel row
+
+        def get_field(sys_field: str):
+            src_col = mappings.get(sys_field)
+            if src_col:
+                v = raw.get(src_col)
+                return v if v else None
+            return None
+
+        isbn_raw = get_field("isbn")
+        title = get_field("title")
+        if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
+            skipped_count += 1
+            continue
+
+        isbn_norm = normalize_isbn(isbn_raw)
+        isbn_status = get_isbn_status(isbn_raw)
+
+        extra_fields = {}
+        for col_name in (extra_field_settings or []):
+            val = raw.get(col_name)
+            if val:
+                extra_fields[col_name] = val
+
+        book = {
+            "title": title,
+            "list_price": _to_float(get_field("list_price")),
+            "purchase_price": _to_float(get_field("purchase_price")),
+            "author": get_field("author"),
+            "publisher": get_field("publisher"),
+            "award_item": get_field("award_item"),
+        }
+        completeness = compute_completeness(book)
+
+        conn.execute(
+            "INSERT INTO vendor_books"
+            "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
+            "publish_date, list_price, purchase_price, publisher, age_range, "
+            "isbn_status, completeness_status, extra_fields, source_row_number, raw_row) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                batch_id,
+                book["award_item"],
+                get_field("vendor_seq"),
+                book["title"],
+                book["author"],
+                isbn_raw,
+                isbn_norm,
+                get_field("publish_date"),
+                book["list_price"],
+                book["purchase_price"],
+                book["publisher"],
+                get_field("age_range"),
+                isbn_status,
+                completeness,
+                json.dumps(extra_fields, ensure_ascii=False) if extra_fields else None,
+                source_row_number,
+                json.dumps(raw, ensure_ascii=False),
+            ),
+        )
+        records_inserted += 1
+
+    conn.execute(
+        "UPDATE import_batches SET record_count = ? WHERE id = ?",
+        (records_inserted, batch_id),
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "batch_id": batch_id,
+        "record_count": records_inserted,
+        "skipped_count": skipped_count,
+    }
 
 
 def import_library_holdings(
@@ -60,9 +287,9 @@ def import_library_holdings(
     conn = get_connection()
 
     if filename.lower().endswith(".xls"):
-        df = pd.read_excel(io.BytesIO(file_bytes), engine="xlrd", dtype=str)
+        df = _read_excel_with_detected_header(file_bytes, "xlrd", LIBRARY_COLUMN_HINTS)
     else:
-        df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl", dtype=str)
+        df = _read_excel_with_detected_header(file_bytes, "openpyxl", LIBRARY_COLUMN_HINTS)
 
     df.columns = [str(c).strip() for c in df.columns]
     mapping, unmapped = _match_columns(list(df.columns), LIBRARY_COLUMN_HINTS)
@@ -90,6 +317,9 @@ def import_library_holdings(
             return None
 
         isbn_raw = get_field("isbn")
+        title = get_field("title")
+        if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
+            continue
         isbn_norm = normalize_isbn(isbn_raw)
         isbn_status = get_isbn_status(isbn_raw)
 
@@ -102,7 +332,7 @@ def import_library_holdings(
                 batch_id,
                 isbn_raw,
                 isbn_norm,
-                get_field("title"),
+                title,
                 get_field("author"),
                 get_field("publisher"),
                 get_field("publish_year"),
@@ -137,10 +367,11 @@ def import_vendor_books(
     profile_id: int | None = None,
     column_overrides: dict | None = None,
 ) -> dict:
+    """Legacy single-step import with auto-detected column mapping."""
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
 
-    df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl", dtype=str)
+    df = _read_excel_with_detected_header(file_bytes, "openpyxl", VENDOR_COLUMN_HINTS)
     df.columns = [str(c).strip() for c in df.columns]
     mapping, unmapped = _match_columns(list(df.columns), VENDOR_COLUMN_HINTS)
     if column_overrides:
@@ -167,13 +398,16 @@ def import_vendor_books(
             return None
 
         isbn_raw = get_field("isbn")
+        title = get_field("title")
+        if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
+            continue
         isbn_norm = normalize_isbn(isbn_raw)
         isbn_status = get_isbn_status(isbn_raw)
 
         award_item = get_field("award_item")
 
         book = {
-            "title": get_field("title"),
+            "title": title,
             "list_price": _to_float(get_field("list_price")),
             "purchase_price": _to_float(get_field("purchase_price")),
             "author": get_field("author"),
@@ -186,8 +420,8 @@ def import_vendor_books(
             "INSERT INTO vendor_books"
             "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
             "publish_date, list_price, purchase_price, publisher, age_range, "
-            "isbn_status, completeness_status, raw_row) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "isbn_status, completeness_status, extra_fields, source_row_number, raw_row) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 batch_id,
                 award_item,
@@ -203,6 +437,8 @@ def import_vendor_books(
                 get_field("age_range"),
                 isbn_status,
                 completeness,
+                None,
+                None,
                 json.dumps(raw, ensure_ascii=False),
             ),
         )

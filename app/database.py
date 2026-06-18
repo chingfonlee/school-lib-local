@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import os
 from pathlib import Path
@@ -76,5 +77,34 @@ def ensure_initial_data() -> None:
                 now,
             ),
         )
+
+    for tmpl in cfg.export_templates:
+        col_map = tmpl.get("column_mappings", {})
+        col_map_json = (
+            json.dumps(col_map, ensure_ascii=False)
+            if isinstance(col_map, dict)
+            else str(col_map)
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO export_templates"
+            "(name, project_type, template_file_path, header_row, data_start_row, "
+            "max_rows, school_name_cell, approved_budget_cell, column_mappings, "
+            "created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                tmpl["name"],
+                tmpl["project_type"],
+                tmpl["template_file_path"],
+                tmpl.get("header_row", 4),
+                tmpl.get("data_start_row", 6),
+                tmpl.get("max_rows", 50),
+                tmpl.get("school_name_cell", "A3"),
+                tmpl.get("approved_budget_cell", "E3"),
+                col_map_json,
+                now,
+                now,
+            ),
+        )
+
     conn.commit()
     conn.close()

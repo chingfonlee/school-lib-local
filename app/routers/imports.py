@@ -5,7 +5,12 @@ from pydantic import BaseModel
 
 from app.auth import require_auth
 from app.database import get_connection
-from app.services.import_service import import_library_holdings, import_vendor_books
+from app.services.import_service import (
+    import_library_holdings,
+    import_vendor_books,
+    preview_excel,
+    confirm_import,
+)
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 
@@ -18,6 +23,82 @@ async def upload_holdings(
     content = await file.read()
     try:
         result = import_library_holdings(content, file.filename, user_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.post("/vendor-books/preview")
+async def preview_vendor_books(
+    file: UploadFile = File(...),
+    sheet_name: str | None = Form(None),
+    header_row: int | None = Form(None),
+    user_id: int = Depends(require_auth),
+):
+    content = await file.read()
+    try:
+        result = preview_excel(content, file.filename, sheet_name=sheet_name, header_row=header_row)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.post("/vendor-books/confirm")
+async def confirm_vendor_books(
+    file: UploadFile = File(...),
+    project_id: int = Form(...),
+    sheet_name: str | None = Form(None),
+    header_row: int = Form(...),
+    mappings: str = Form(...),
+    extra_field_settings: str = Form("[]"),
+    save_profile: bool = Form(False),
+    profile_name: str | None = Form(None),
+    user_id: int = Depends(require_auth),
+):
+    content = await file.read()
+    try:
+        mappings_dict = json.loads(mappings)
+        extra_list = json.loads(extra_field_settings)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"mappings/extra_field_settings JSON 格式錯誤：{e}")
+
+    profile_id = None
+    if save_profile and profile_name:
+        now = datetime.now(timezone.utc).isoformat()
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "INSERT OR IGNORE INTO import_profiles"
+                "(name, file_type, column_mappings, project_type, source_type, "
+                "header_row, mappings, extra_field_settings, created_at, updated_at) "
+                "VALUES (?, 'vendor_books', ?, 'local_culture', 'excel', ?, ?, ?, ?, ?)",
+                (
+                    profile_name,
+                    json.dumps(mappings_dict, ensure_ascii=False),
+                    header_row,
+                    json.dumps(mappings_dict, ensure_ascii=False),
+                    json.dumps(extra_list, ensure_ascii=False),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            profile_id = row.lastrowid or None
+        finally:
+            conn.close()
+
+    try:
+        result = confirm_import(
+            content,
+            file.filename,
+            project_id,
+            sheet_name=sheet_name,
+            header_row=header_row,
+            mappings=mappings_dict,
+            extra_field_settings=extra_list,
+            user_id=user_id,
+            profile_id=profile_id,
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result

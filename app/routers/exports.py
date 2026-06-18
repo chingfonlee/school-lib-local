@@ -39,7 +39,6 @@ async def do_export(body: ExportRequest, user_id: int = Depends(require_auth)):
         approved_budget=body.approved_budget,
         price_field=body.price_field,
         subtotal_mode=body.subtotal_mode,
-        template_path=cfg.local_culture_export_template,
         output_dir=cfg.export_output_dir,
         exported_by=user_id,
     )

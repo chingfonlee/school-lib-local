@@ -18,6 +18,28 @@ export:
   default_price_field: "purchase_price"
   default_subtotal_mode: "quantity_times_purchase_price"
 
+export_templates:
+  - name: "local_culture_kaohsiung_115"
+    project_type: "local_culture"
+    template_file_path: "./00_source/高雄市115年度○○區○○國小圖書館（室）充實本土文化相關圖書採購書單(空白).xlsx"
+    header_row: 4
+    data_start_row: 6
+    max_rows: 50
+    school_name_cell: "A3"
+    approved_budget_cell: "E3"
+    column_mappings:
+      sort_order: "A"
+      title: "B"
+      author: "C"
+      publisher: "D"
+      isbn: "E"
+      quantity: "F"
+      price: "G"
+      subtotal: "H"
+      award_item: "I"
+      notes: "J"
+
 default_project:
   name: "115年度本土文化採購"
   project_type: "local_culture"
+  export_template_name: "local_culture_kaohsiung_115"

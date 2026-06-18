@@ -5,31 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import openpyxl
+from openpyxl.utils import column_index_from_string
 
 from app.database import get_connection
 from app.services.validation_service import check_export_readiness
-
-TEMPLATE_CONFIG = {
-    "school_name_cell": "A3",
-    "school_name_prefix": "校名：",
-    "budget_cell": "E3",
-    "budget_prefix": "本案核定金額：新臺幣",
-    "budget_suffix": "元",
-    "example_row": 5,
-    "data_start_row": 6,
-    "data_template_end_row": 55,
-    "summary_row": 56,
-    "col_seq": 1,
-    "col_title": 2,
-    "col_author": 3,
-    "col_publisher": 4,
-    "col_isbn": 5,
-    "col_quantity": 6,
-    "col_price": 7,
-    "col_subtotal": 8,
-    "col_award_item": 9,
-    "col_notes": 10,
-}
 
 
 @dataclass
@@ -39,9 +18,28 @@ class ExportSettings:
     approved_budget: float | None
     price_field: str
     subtotal_mode: str
-    template_path: str
     output_dir: str
     exported_by: int
+
+
+def _load_export_template_for_project(project_id: int, conn) -> dict:
+    """Look up the export template for a project by its export_template_type."""
+    project = conn.execute(
+        "SELECT export_template_type FROM procurement_projects WHERE id = ?",
+        (project_id,),
+    ).fetchone()
+    if project is None:
+        raise ValueError("採購專案不存在")
+    tmpl = conn.execute(
+        "SELECT * FROM export_templates WHERE project_type = ? ORDER BY id LIMIT 1",
+        (project["export_template_type"],),
+    ).fetchone()
+    if tmpl is None:
+        raise ValueError(
+            f"找不到匯出範本（project_type={project['export_template_type']}）"
+            "，請確認 config.yaml export_templates 已設定並重新啟動服務。"
+        )
+    return dict(tmpl)
 
 
 def _resolve_field(book: dict, field: str) -> str:
@@ -74,23 +72,45 @@ def export_local_culture(settings: ExportSettings) -> str:
         titles = "; ".join(d["title"] for d in blocking[:5])
         raise ValueError(f"以下書目缺少必填欄位無法匯出：{titles}")
 
+    conn = get_connection()
+    tmpl = _load_export_template_for_project(settings.project_id, conn)
+    conn.close()
+
+    col_map = json.loads(tmpl["column_mappings"])
+
+    def col(key: str) -> int:
+        return column_index_from_string(col_map[key])
+
+    template_path = tmpl["template_file_path"]
+    data_start = tmpl["data_start_row"]
+    max_rows = tmpl["max_rows"]
+    example_row = data_start - 1
+    template_end = data_start + max_rows - 1
+    summary_row = data_start + max_rows
+
     Path(settings.output_dir).mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_filename = f"本土文化採購書單_{ts}.xlsx"
     out_path = str(Path(settings.output_dir) / out_filename)
 
-    shutil.copy2(settings.template_path, out_path)
+    shutil.copy2(template_path, out_path)
 
     wb = openpyxl.load_workbook(out_path)
     ws = wb.active
-    tc = TEMPLATE_CONFIG
 
-    ws[tc["school_name_cell"]] = tc["school_name_prefix"] + settings.school_name
+    school_name_prefix = "校名："
+    budget_prefix = "本案核定金額：新臺幣"
+    budget_suffix = "元"
+
+    ws[tmpl["school_name_cell"]] = school_name_prefix + settings.school_name
     if settings.approved_budget is not None:
-        ws[tc["budget_cell"]] = tc["budget_prefix"] + f"{settings.approved_budget:,.0f}" + tc["budget_suffix"]
+        ws[tmpl["approved_budget_cell"]] = (
+            budget_prefix + f"{settings.approved_budget:,.0f}" + budget_suffix
+        )
 
-    for col in range(tc["col_title"], tc["col_notes"] + 1):
-        ws.cell(row=tc["example_row"], column=col).value = None
+    if example_row >= 1:
+        for key in col_map:
+            ws.cell(row=example_row, column=col(key)).value = None
 
     conn = get_connection()
     books = conn.execute(
@@ -106,10 +126,6 @@ def export_local_culture(settings: ExportSettings) -> str:
     conn.close()
 
     exportable = [dict(b) for b in books if b["selected_quantity"] > 0]
-
-    data_start = tc["data_start_row"]
-    template_end = tc["data_template_end_row"]
-    summary_row = tc["summary_row"]
 
     extra_rows_needed = max(0, len(exportable) - (template_end - data_start + 1))
     if extra_rows_needed > 0:
@@ -132,24 +148,24 @@ def export_local_culture(settings: ExportSettings) -> str:
         else:
             subtotal = quantity * _get_price(book, "purchase_price")
 
-        ws.cell(row=row, column=tc["col_seq"]).value = i + 1
-        ws.cell(row=row, column=tc["col_title"]).value = _resolve_field(book, "title")
-        ws.cell(row=row, column=tc["col_author"]).value = _resolve_field(book, "author")
-        ws.cell(row=row, column=tc["col_publisher"]).value = _resolve_field(book, "publisher")
-        ws.cell(row=row, column=tc["col_isbn"]).value = (
+        ws.cell(row=row, column=col("sort_order")).value = i + 1
+        ws.cell(row=row, column=col("title")).value = _resolve_field(book, "title")
+        ws.cell(row=row, column=col("author")).value = _resolve_field(book, "author")
+        ws.cell(row=row, column=col("publisher")).value = _resolve_field(book, "publisher")
+        ws.cell(row=row, column=col("isbn")).value = (
             _resolve_field(book, "isbn_normalized") or _resolve_field(book, "isbn")
         )
-        ws.cell(row=row, column=tc["col_quantity"]).value = quantity
-        ws.cell(row=row, column=tc["col_price"]).value = price if price else None
-        ws.cell(row=row, column=tc["col_subtotal"]).value = subtotal if subtotal else None
-        ws.cell(row=row, column=tc["col_award_item"]).value = _resolve_field(book, "award_item")
-        ws.cell(row=row, column=tc["col_notes"]).value = book.get("sel_notes") or None
+        ws.cell(row=row, column=col("quantity")).value = quantity
+        ws.cell(row=row, column=col("price")).value = price if price else None
+        ws.cell(row=row, column=col("subtotal")).value = subtotal if subtotal else None
+        ws.cell(row=row, column=col("award_item")).value = _resolve_field(book, "award_item")
+        ws.cell(row=row, column=col("notes")).value = book.get("sel_notes") or None
 
         total_qty += quantity
         total_amount += subtotal
 
-    ws.cell(row=summary_row, column=tc["col_quantity"]).value = total_qty
-    ws.cell(row=summary_row, column=tc["col_subtotal"]).value = total_amount
+    ws.cell(row=summary_row, column=col("quantity")).value = total_qty
+    ws.cell(row=summary_row, column=col("subtotal")).value = total_amount
 
     wb.save(out_path)
 
@@ -159,21 +175,22 @@ def export_local_culture(settings: ExportSettings) -> str:
         "INSERT INTO export_jobs"
         "(project_id, school_name, approved_budget, price_field, subtotal_mode, "
         "template_path, output_filename, output_path, exported_by, exported_at, "
-        "record_count, total_amount) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "record_count, total_amount, export_template_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             settings.project_id,
             settings.school_name,
             settings.approved_budget,
             settings.price_field,
             settings.subtotal_mode,
-            settings.template_path,
+            template_path,
             out_filename,
             out_path,
             settings.exported_by,
             now,
             len(exportable),
             total_amount,
+            tmpl["id"],
         ),
     )
     job_id = row.lastrowid

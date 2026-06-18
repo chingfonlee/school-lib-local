@@ -19,6 +19,10 @@ class Config:
         self.default_subtotal_mode: str = data["export"]["default_subtotal_mode"]
         self.default_project_name: str = data["default_project"]["name"]
         self.default_project_type: str = data["default_project"]["project_type"]
+        self.default_project_export_template_name: str = data.get("default_project", {}).get(
+            "export_template_name", ""
+        )
+        self.export_templates: list[dict] = data.get("export_templates", [])
 
 
 _config: Config | None = None
