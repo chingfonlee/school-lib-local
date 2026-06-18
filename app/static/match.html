@@ -35,8 +35,6 @@
       <option value="">全部</option>
       <option value="available">可採購</option>
       <option value="already_owned">已館藏</option>
-      <option value="missing_isbn">ISBN缺失</option>
-      <option value="invalid_isbn">ISBN無效</option>
     </select>
     <label>完整度：</label>
     <select id="filter-comp" onchange="loadBooks()">
@@ -83,7 +81,7 @@ async function loadStats() {
   document.getElementById('stats-row').innerHTML = `
     <div class="stat-card green"><div class="num">${ms.available||0}</div><div class="label">可採購</div></div>
     <div class="stat-card gray"><div class="num">${ms.already_owned||0}</div><div class="label">已館藏</div></div>
-    <div class="stat-card yellow"><div class="num">${(ms.missing_isbn||0)+(ms.invalid_isbn||0)}</div><div class="label">ISBN異常</div></div>
+    <div class="stat-card gray"><div class="num">${s.ignored_missing_isbn||0}</div><div class="label">已忽略缺ISBN</div></div>
     <div class="stat-card green"><div class="num">${cs.export_ready||0}</div><div class="label">可匯出</div></div>
     <div class="stat-card yellow"><div class="num">${cs.needs_review||0}</div><div class="label">需補資料</div></div>
     <div class="stat-card red"><div class="num">${cs.missing_required||0}</div><div class="label">缺必填</div></div>

@@ -126,6 +126,14 @@ function render(books) {
     const pp = ov.purchase_price || b.purchase_price;
     const award = ov.award_item || b.award_item || '';
     const qty = selMap[b.id] || 0;
+    const extra = b.extra_fields ? (() => { try { return JSON.parse(b.extra_fields); } catch(e) { return null; } })() : null;
+    const hasExtra = extra && Object.keys(extra).length > 0;
+    const extraRow = hasExtra ? `
+    <tr id="extra-${b.id}" style="display:none">
+      <td colspan="9" style="background:#f5f5f7;padding:6px 16px;font-size:13px;color:#444">
+        ${Object.entries(extra).map(([k,v]) => `<span style="margin-right:14px"><span style="color:#6e6e73">${k}：</span>${v}</span>`).join('')}
+      </td>
+    </tr>` : '';
     return `
     <tr id="row-${b.id}">
       <td>${title}</td>
@@ -141,6 +149,7 @@ function render(books) {
       </td>
       <td>
         <a href="#" onclick="toggleEdit(${b.id})" style="font-size:13px">修正資料</a>
+        ${hasExtra ? `<br><a href="#" onclick="toggleExtra(${b.id})" style="font-size:12px;color:#6e6e73">書商資訊</a>` : ''}
       </td>
     </tr>
     <tr id="edit-${b.id}" style="display:none">
@@ -156,7 +165,8 @@ function render(books) {
           <button class="btn btn-secondary btn-sm" onclick="toggleEdit(${b.id})">取消</button>
         </div>
       </td>
-    </tr>`;
+    </tr>
+    ${extraRow}`;
   }).join('');
 }
 
@@ -186,6 +196,11 @@ async function refreshBudget() {
 function toggleEdit(id) {
   const row = document.getElementById('edit-' + id);
   row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function toggleExtra(id) {
+  const row = document.getElementById('extra-' + id);
+  if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
 }
 
 async function saveOverrides(bookId) {

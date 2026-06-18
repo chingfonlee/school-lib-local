@@ -5,6 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>匯入 — 圖書採購系統</title>
 <link rel="stylesheet" href="/css/style.css">
+<style>
+.wizard-bar{display:flex;gap:0;margin-bottom:20px;border:1px solid #d1d1d6;border-radius:8px;overflow:hidden}
+.wstep{flex:1;padding:10px 4px;text-align:center;font-size:13px;background:#f5f5f7;color:#6e6e73;border-right:1px solid #d1d1d6;cursor:default}
+.wstep:last-child{border-right:none}
+.wstep.active{background:#1d6fa4;color:#fff;font-weight:600}
+.wstep.done{background:#e8f5e9;color:#2e7d32}
+.wizard-step{padding:4px 0}
+.map-table td{padding:6px 8px;vertical-align:middle}
+.map-table select{width:100%;max-width:240px;padding:4px 6px;border:1px solid #d1d1d6;border-radius:4px;font-size:13px}
+.extra-cb-list{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:8px}
+.extra-cb-list label{display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer}
+.summary-dl{display:grid;grid-template-columns:120px 1fr;gap:6px 12px;font-size:14px}
+.summary-dl dt{color:#6e6e73;text-align:right}
+.summary-dl dd{margin:0}
+</style>
 </head>
 <body>
 <nav>
@@ -43,17 +58,100 @@
     <div id="holdings-result" style="margin-top:16px"></div>
   </div>
 
-  <!-- 書商書單 -->
+  <!-- 書商書單 wizard -->
   <div id="tab-vendor" class="tab-panel">
-    <div id="vendor-alert" class="alert alert-warn" style="display:none">請先選擇採購專案</div>
-    <div class="alert alert-info">支援 .xlsx 格式。書單資料歸屬於目前選定的採購專案。</div>
-    <div class="upload-area" onclick="document.getElementById('vendor-file').click()" id="vendor-drop">
-      <div class="icon">📚</div>
-      <div>點擊或拖曳上傳 <strong>書商書單 .xlsx</strong></div>
-      <div class="hint">最大 50MB</div>
-      <input type="file" id="vendor-file" accept=".xlsx" onchange="uploadVendor(this.files[0])">
+    <div id="vendor-alert" class="alert alert-warn" style="display:none">請先選擇採購專案後再匯入書商書單。</div>
+
+    <div class="wizard-bar" id="vendor-wizard-bar">
+      <div class="wstep active" id="ws-A">A&nbsp;上傳</div>
+      <div class="wstep" id="ws-B">B&nbsp;工作表</div>
+      <div class="wstep" id="ws-C">C&nbsp;欄位對應</div>
+      <div class="wstep" id="ws-D">D&nbsp;額外欄位</div>
+      <div class="wstep" id="ws-E">E&nbsp;確認匯入</div>
     </div>
-    <div id="vendor-result" style="margin-top:16px"></div>
+
+    <!-- 步驟 A -->
+    <div id="step-A" class="wizard-step">
+      <div class="alert alert-info">支援 .xlsx 格式。書單資料歸屬於目前選定的採購專案。</div>
+      <div class="upload-area" onclick="document.getElementById('vendor-file').click()" id="vendor-drop">
+        <div class="icon">📚</div>
+        <div>點擊或拖曳上傳 <strong>書商書單 .xlsx</strong></div>
+        <div class="hint">最大 50MB</div>
+        <input type="file" id="vendor-file" accept=".xlsx,.xls" onchange="handleFileUpload(this.files[0])">
+      </div>
+      <div id="step-A-status" style="margin-top:12px"></div>
+    </div>
+
+    <!-- 步驟 B -->
+    <div id="step-B" class="wizard-step" style="display:none">
+      <h3 style="margin:0 0 16px">選擇工作表與標題列</h3>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+        <div class="form-group" style="margin:0">
+          <label>工作表</label>
+          <select id="sheet-select" style="width:220px"></select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>標題列（第幾列）</label>
+          <input type="number" id="header-row-input" min="1" max="30" value="1" style="width:80px">
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="refreshPreview()">更新預覽</button>
+      </div>
+      <div id="step-B-status" style="font-size:13px;color:#6e6e73;min-height:20px;margin-bottom:12px"></div>
+      <button class="btn btn-primary" onclick="goToStep('C')">下一步 →</button>
+    </div>
+
+    <!-- 步驟 C -->
+    <div id="step-C" class="wizard-step" style="display:none">
+      <h3 style="margin:0 0 8px">確認欄位對應</h3>
+      <p style="font-size:13px;color:#6e6e73;margin:0 0 12px">系統已自動猜測對應，請確認或調整。帶 <span style="color:#c0392b">*</span> 為必要欄位。</p>
+      <div class="card" style="padding:0;margin-bottom:16px">
+        <div class="table-wrap" style="max-height:380px;overflow-y:auto">
+          <table class="map-table">
+            <thead><tr><th style="width:160px">系統欄位</th><th>書商來源欄位</th></tr></thead>
+            <tbody id="mapping-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="step-C-warning" class="alert alert-warn" style="display:none;margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="goToStep('B')">← 上一步</button>
+        <button class="btn btn-primary" onclick="validateAndGoD()">下一步 →</button>
+      </div>
+    </div>
+
+    <!-- 步驟 D -->
+    <div id="step-D" class="wizard-step" style="display:none">
+      <h3 style="margin:0 0 8px">選擇要保留的額外欄位</h3>
+      <p style="font-size:13px;color:#6e6e73;margin:0 0 4px">以下為未對應至標準欄位的書商欄位，勾選要在選書頁顯示的欄位：</p>
+      <div id="extra-fields-list" class="extra-cb-list" style="margin-bottom:16px"></div>
+      <div id="step-D-empty" class="alert alert-info" style="display:none;margin-bottom:12px">無額外欄位。</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="goToStep('C')">← 上一步</button>
+        <button class="btn btn-primary" onclick="goToStep('E')">下一步 →</button>
+      </div>
+    </div>
+
+    <!-- 步驟 E -->
+    <div id="step-E" class="wizard-step" style="display:none">
+      <h3 style="margin:0 0 12px">確認並正式匯入</h3>
+      <div class="card" style="background:#f5f5f7;padding:16px;margin-bottom:16px">
+        <dl class="summary-dl" id="import-summary"></dl>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px">
+          <input type="checkbox" id="save-profile-cb" onchange="toggleProfileName()">
+          儲存此欄位設定供日後套用
+        </label>
+        <div id="profile-name-row" style="display:none;margin-top:8px">
+          <input type="text" id="profile-name-input" placeholder="設定名稱（如：日苑書商）" style="width:240px">
+        </div>
+      </div>
+      <div id="step-E-result" style="margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="goToStep('D')">← 上一步</button>
+        <button class="btn btn-primary" id="confirm-btn" onclick="doConfirmImport()">確認匯入</button>
+      </div>
+    </div>
   </div>
 
   <!-- 紀錄 -->
@@ -65,6 +163,21 @@
 <script src="/js/common.js"></script>
 <script>
 let pid = null;
+let wizardFile = null;
+let previewData = null;
+
+const SYSTEM_FIELDS = [
+  {key:'title',         label:'書名',     required:true},
+  {key:'isbn',          label:'ISBN/條碼', required:true},
+  {key:'list_price',    label:'定價',     required:false},
+  {key:'purchase_price',label:'採購單價', required:false},
+  {key:'author',        label:'作者',     required:false},
+  {key:'publisher',     label:'出版社',   required:false},
+  {key:'award_item',    label:'獲獎項目', required:false},
+  {key:'vendor_seq',    label:'序號',     required:false},
+  {key:'publish_date',  label:'出版日期', required:false},
+  {key:'age_range',     label:'適合年齡', required:false},
+];
 
 requireAuth().then(async () => {
   pid = getProjectId();
@@ -86,18 +199,19 @@ function switchTab(name, btn) {
   if (name === 'history') loadHistory();
 }
 
-function setupDrop(dropId, handler) {
-  const el = document.getElementById(dropId);
-  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag-over'); });
-  el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
-  el.addEventListener('drop', e => {
-    e.preventDefault(); el.classList.remove('drag-over');
-    const f = e.dataTransfer.files[0];
-    if (f) handler(f);
-  });
-}
-setupDrop('holdings-drop', uploadHoldings);
-setupDrop('vendor-drop', uploadVendor);
+(function setupDrop(){
+  function bind(id, handler) {
+    const el = document.getElementById(id);
+    el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag-over'); });
+    el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+    el.addEventListener('drop', e => {
+      e.preventDefault(); el.classList.remove('drag-over');
+      const f = e.dataTransfer.files[0]; if (f) handler(f);
+    });
+  }
+  bind('holdings-drop', uploadHoldings);
+  bind('vendor-drop', handleFileUpload);
+})();
 
 async function uploadHoldings(file) {
   if (!file) return;
@@ -110,7 +224,7 @@ async function uploadHoldings(file) {
     el.innerHTML = `
       <div class="alert alert-success">
         ✓ 匯入完成：共 <strong>${result.record_count}</strong> 筆
-        ${result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}（可在欄位對應設定中補齊）` : ''}
+        ${result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}` : ''}
       </div>`;
     showToast('館藏匯入完成');
   } catch (e) {
@@ -118,27 +232,191 @@ async function uploadHoldings(file) {
   }
 }
 
-async function uploadVendor(file) {
+/* ── wizard ── */
+function goToStep(step) {
+  const order = ['A','B','C','D','E'];
+  order.forEach(s => {
+    document.getElementById('step-' + s).style.display = (s === step) ? '' : 'none';
+    const ws = document.getElementById('ws-' + s);
+    ws.classList.remove('active', 'done');
+    if (s === step) ws.classList.add('active');
+    else if (order.indexOf(s) < order.indexOf(step)) ws.classList.add('done');
+  });
+  if (step === 'C') renderMappingTable();
+  if (step === 'D') renderExtraFields();
+  if (step === 'E') renderSummary();
+}
+
+async function handleFileUpload(file) {
   if (!file) return;
   if (!pid) { showToast('請先選擇採購專案'); return; }
-  const el = document.getElementById('vendor-result');
-  el.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> 匯入中...</div>';
-  const fd = new FormData();
-  fd.append('file', file);
-  fd.append('project_id', pid);
+  wizardFile = file;
+  document.getElementById('step-A-status').innerHTML =
+    '<div class="alert alert-info"><span class="spinner"></span> 讀取檔案中...</div>';
   try {
-    const result = await api('/api/imports/vendor-books', { method: 'POST', body: fd });
-    el.innerHTML = `
+    await callPreview(null, null);
+    document.getElementById('step-A-status').innerHTML =
+      `<div class="alert alert-success">✓ 已讀取：${file.name}</div>`;
+    goToStep('B');
+  } catch (e) {
+    document.getElementById('step-A-status').innerHTML =
+      `<div class="alert alert-error">讀取失敗：${e.message}</div>`;
+    wizardFile = null;
+  }
+}
+
+async function callPreview(sheetName, headerRow0) {
+  const fd = new FormData();
+  fd.append('file', wizardFile);
+  if (sheetName) fd.append('sheet_name', sheetName);
+  if (headerRow0 !== null && headerRow0 !== undefined) fd.append('header_row', headerRow0);
+  previewData = await api('/api/imports/vendor-books/preview', { method: 'POST', body: fd });
+
+  const sel = document.getElementById('sheet-select');
+  sel.innerHTML = (previewData.sheets || []).map(s =>
+    `<option value="${s}"${s === previewData.active_sheet ? ' selected' : ''}>${s}</option>`
+  ).join('');
+  document.getElementById('header-row-input').value = previewData.guessed_header_row + 1;
+  document.getElementById('step-B-status').textContent =
+    `偵測到標題列：第 ${previewData.guessed_header_row + 1} 列，共 ${previewData.source_columns.length} 個欄位。`;
+}
+
+async function refreshPreview() {
+  if (!wizardFile) return;
+  const sheetName = document.getElementById('sheet-select').value;
+  const hr1 = parseInt(document.getElementById('header-row-input').value) || 1;
+  document.getElementById('step-B-status').textContent = '更新中...';
+  try {
+    await callPreview(sheetName, hr1 - 1);
+  } catch (e) {
+    document.getElementById('step-B-status').textContent = '更新失敗：' + e.message;
+  }
+}
+
+function renderMappingTable() {
+  if (!previewData) return;
+  const cols = ['', ...previewData.source_columns];
+  const tbody = document.getElementById('mapping-body');
+  tbody.innerHTML = SYSTEM_FIELDS.map(f => {
+    const suggested = previewData.suggested_mappings[f.key] || '';
+    const opts = cols.map(c =>
+      `<option value="${c}"${c === suggested ? ' selected' : ''}>${c || '— 未對應 —'}</option>`
+    ).join('');
+    return `<tr>
+      <td>${f.label}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}</td>
+      <td><select id="map-${f.key}">${opts}</select></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderExtraFields() {
+  if (!previewData) return;
+  const list = document.getElementById('extra-fields-list');
+  const empty = document.getElementById('step-D-empty');
+  const extras = previewData.extra_source_columns || [];
+  if (!extras.length) {
+    list.innerHTML = '';
+    empty.style.display = '';
+  } else {
+    empty.style.display = 'none';
+    list.innerHTML = extras.map(col =>
+      `<label><input type="checkbox" name="extra-field" value="${col}" checked> ${col}</label>`
+    ).join('');
+  }
+}
+
+function getMappings() {
+  const m = {};
+  SYSTEM_FIELDS.forEach(f => {
+    const sel = document.getElementById('map-' + f.key);
+    if (sel && sel.value) m[f.key] = sel.value;
+  });
+  return m;
+}
+
+function getExtraFields() {
+  return Array.from(document.querySelectorAll('input[name="extra-field"]:checked'))
+    .map(cb => cb.value);
+}
+
+function validateAndGoD() {
+  const m = getMappings();
+  const missing = SYSTEM_FIELDS.filter(f => f.required && !m[f.key]).map(f => f.label);
+  const warn = document.getElementById('step-C-warning');
+  if (missing.length) {
+    warn.style.display = '';
+    warn.textContent = `必要欄位尚未對應：${missing.join('、')}`;
+    return;
+  }
+  warn.style.display = 'none';
+  goToStep('D');
+}
+
+function renderSummary() {
+  const mappings = getMappings();
+  const extras = getExtraFields();
+  const sheetName = document.getElementById('sheet-select').value;
+  const hr1 = document.getElementById('header-row-input').value;
+  const mapDesc = Object.entries(mappings).map(([sys, src]) => {
+    const f = SYSTEM_FIELDS.find(x => x.key === sys);
+    return `${f ? f.label : sys}→${src}`;
+  }).join('、');
+  document.getElementById('import-summary').innerHTML = `
+    <dt>工作表</dt><dd>${sheetName}</dd>
+    <dt>標題列</dt><dd>第 ${hr1} 列</dd>
+    <dt>欄位對應</dt><dd style="word-break:break-all">${mapDesc || '（無）'}</dd>
+    <dt>額外欄位</dt><dd>${extras.length ? extras.join('、') : '（無）'}</dd>
+  `;
+  document.getElementById('step-E-result').innerHTML = '';
+  document.getElementById('confirm-btn').disabled = false;
+  document.getElementById('confirm-btn').textContent = '確認匯入';
+}
+
+function toggleProfileName() {
+  document.getElementById('profile-name-row').style.display =
+    document.getElementById('save-profile-cb').checked ? '' : 'none';
+}
+
+async function doConfirmImport() {
+  if (!wizardFile || !pid) return;
+  const btn = document.getElementById('confirm-btn');
+  btn.disabled = true;
+  btn.textContent = '匯入中...';
+  document.getElementById('step-E-result').innerHTML =
+    '<div class="alert alert-info"><span class="spinner"></span> 匯入中，請稍候...</div>';
+
+  const sheetName = document.getElementById('sheet-select').value;
+  const hr1 = parseInt(document.getElementById('header-row-input').value) || 1;
+  const mappings = getMappings();
+  const extras = getExtraFields();
+  const saveProfile = document.getElementById('save-profile-cb').checked;
+  const profileName = document.getElementById('profile-name-input').value.trim();
+
+  const fd = new FormData();
+  fd.append('file', wizardFile);
+  fd.append('project_id', pid);
+  fd.append('sheet_name', sheetName);
+  fd.append('header_row', hr1 - 1);
+  fd.append('mappings', JSON.stringify(mappings));
+  fd.append('extra_field_settings', JSON.stringify(extras));
+  fd.append('save_profile', saveProfile ? 'true' : 'false');
+  if (saveProfile && profileName) fd.append('profile_name', profileName);
+
+  try {
+    const result = await api('/api/imports/vendor-books/confirm', { method: 'POST', body: fd });
+    document.getElementById('step-E-result').innerHTML = `
       <div class="alert alert-success">
         ✓ 匯入完成：共 <strong>${result.record_count}</strong> 筆
-        ${result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}` : ''}
+        ${result.skipped_count ? `（略過空白列 ${result.skipped_count} 筆）` : ''}
       </div>
-      <p style="margin-top:12px;font-size:14px">
-        <a href="/match.html">前往比對結果 →</a>
-      </p>`;
+      <p style="margin-top:8px;font-size:14px"><a href="/match.html">前往比對結果 →</a></p>`;
+    btn.textContent = '已匯入';
     showToast('書單匯入完成');
   } catch (e) {
-    el.innerHTML = `<div class="alert alert-error">匯入失敗：${e.message}</div>`;
+    document.getElementById('step-E-result').innerHTML =
+      `<div class="alert alert-error">匯入失敗：${e.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = '確認匯入';
   }
 }
 
