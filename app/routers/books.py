@@ -63,7 +63,8 @@ async def get_stats(
         "FROM book_matches bm "
         "JOIN vendor_books vb ON vb.id = bm.vendor_book_id "
         "JOIN import_batches ib ON ib.id = vb.batch_id "
-        "WHERE ib.project_id = ? AND bm.match_status != 'same_title_different_isbn' "
+        "WHERE ib.project_id = ? AND vb.isbn_status = 'valid' "
+        "AND bm.match_status != 'same_title_different_isbn' "
         "GROUP BY bm.match_status",
         (project_id,),
     ).fetchall()

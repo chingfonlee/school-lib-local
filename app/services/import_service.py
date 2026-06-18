@@ -33,14 +33,19 @@ VENDOR_COLUMN_HINTS = {
 }
 
 
+def _normalize_header(value: str) -> str:
+    return "".join(str(value).strip().lower().split())
+
+
 def _match_columns(df_columns: list[str], hints: dict) -> tuple[dict, list[str]]:
     """Returns (mapping {src_col: sys_field}, unmapped_sys_fields)."""
     mapping = {}
-    lower_cols = {c.strip().lower(): c for c in df_columns}
+    lower_cols = {_normalize_header(c): c for c in df_columns}
     for field, candidates in hints.items():
         for cand in candidates:
-            if cand.lower() in lower_cols:
-                mapping[lower_cols[cand.lower()]] = field
+            key = _normalize_header(cand)
+            if key in lower_cols:
+                mapping[lower_cols[key]] = field
                 break
     mapped_targets = set(mapping.values())
     unmapped = [field for field in hints if field not in mapped_targets]

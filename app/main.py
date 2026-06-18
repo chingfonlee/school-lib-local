@@ -18,8 +18,6 @@ app.include_router(books.router)
 app.include_router(selections.router)
 app.include_router(exports.router)
 
-app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
-
 
 @app.on_event("startup")
 async def startup():
@@ -30,3 +28,6 @@ async def startup():
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
