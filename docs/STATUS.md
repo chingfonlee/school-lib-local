@@ -1,17 +1,24 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-selection-card-ui
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
-last_agent: codex
-updated: 2026-06-18
+last_agent: claude
+updated: 2026-06-19
 ---
 
 # Project Status
 
 ## Active Tasks
+
+- id: task-selection-card-ui
+  status: active
+  branch: feat/task-selection-card-ui
+  base_branch: main
+  last_log: ""
+  last_agent: claude
 
 - id: task-remember-last-project
   status: done
