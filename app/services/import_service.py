@@ -60,6 +60,20 @@ def _match_columns(df_columns: list[str], hints: dict) -> tuple[dict, list[str]]
     return mapping, unmapped
 
 
+def _list_excel_sheets(file_bytes: bytes, engine: str) -> list[str]:
+    """Return sheet names from an xls/xlsx workbook."""
+    if engine == "openpyxl":
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+        sheets = list(wb.sheetnames)
+        wb.close()
+    else:
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=file_bytes)
+        sheets = wb.sheet_names()
+    return sheets
+
+
 def _detect_header_row(file_bytes: bytes, engine: str, hints: dict, sheet_name=0) -> int:
     """Score first 20 rows and return the best 0-based header row index."""
     preview = pd.read_excel(
@@ -318,78 +332,61 @@ def import_library_holdings(
     column_overrides: dict | None = None,
 ) -> dict:
     now = datetime.now(timezone.utc).isoformat()
+    engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
+    sheets = _list_excel_sheets(file_bytes, engine)
+
     conn = get_connection()
+    try:
+        _clear_library_holdings(conn)
 
-    if filename.lower().endswith(".xls"):
-        df = _read_excel_with_detected_header(file_bytes, "xlrd", LIBRARY_COLUMN_HINTS)
-    else:
-        df = _read_excel_with_detected_header(file_bytes, "openpyxl", LIBRARY_COLUMN_HINTS)
+        batch_row = conn.execute(
+            "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
+            "imported_by, imported_at) VALUES (NULL, 'library_holdings', ?, ?, ?, ?)",
+            (filename, profile_id, user_id, now),
+        )
+        batch_id = batch_row.lastrowid
 
-    df.columns = [str(c).strip() for c in df.columns]
-    mapping, unmapped = _match_columns(list(df.columns), LIBRARY_COLUMN_HINTS)
-    if column_overrides:
-        mapping.update(column_overrides)
+        records_inserted = 0
+        sheet_summaries = []
+        skipped_sheets = []
+        last_mapping: dict = {}
+        last_unmapped: list = []
 
-    batch_row = conn.execute(
-        "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
-        "imported_by, imported_at) VALUES (NULL, 'library_holdings', ?, ?, ?, ?)",
-        (filename, profile_id, user_id, now),
-    )
-    batch_id = batch_row.lastrowid
+        for sheet_name in sheets:
+            result = _read_library_sheet(file_bytes, engine, sheet_name)
+            if result is None:
+                skipped_sheets.append({"sheet_name": str(sheet_name), "reason": "無 isbn 或 title 欄位"})
+                continue
+            df, mapping, unmapped = result
+            if column_overrides:
+                mapping.update(column_overrides)
+            n = _insert_library_holding_rows(conn, batch_id, df, mapping)
+            records_inserted += n
+            sheet_summaries.append({"sheet_name": str(sheet_name), "record_count": n})
+            last_mapping, last_unmapped = mapping, unmapped
 
-    records_inserted = 0
-    reverse_map = {v: k for k, v in mapping.items()}
-
-    for _, row in df.iterrows():
-        raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
-
-        def get_field(field: str):
-            src = reverse_map.get(field)
-            if src:
-                v = raw.get(src)
-                return v if v else None
-            return None
-
-        isbn_raw = get_field("isbn")
-        title = get_field("title")
-        if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
-            continue
-        isbn_norm = normalize_isbn(isbn_raw)
-        isbn_status = get_isbn_status(isbn_raw)
+        if records_inserted == 0:
+            raise ValueError("館藏檔案未匯入任何有效資料，請確認 Excel 格式與欄位名稱")
 
         conn.execute(
-            "INSERT INTO library_holdings"
-            "(batch_id, isbn, isbn_normalized, title, author, publisher, publish_year, "
-            "price, library_record_id, isbn_status, raw_row) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                batch_id,
-                isbn_raw,
-                isbn_norm,
-                title,
-                get_field("author"),
-                get_field("publisher"),
-                get_field("publish_year"),
-                _to_float(get_field("price")),
-                get_field("library_record_id"),
-                isbn_status,
-                json.dumps(raw, ensure_ascii=False),
-            ),
+            "UPDATE import_batches SET record_count = ? WHERE id = ?",
+            (records_inserted, batch_id),
         )
-        records_inserted += 1
-
-    conn.execute(
-        "UPDATE import_batches SET record_count = ? WHERE id = ?",
-        (records_inserted, batch_id),
-    )
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
     return {
         "batch_id": batch_id,
+        "replaced": True,
         "record_count": records_inserted,
-        "unmapped_fields": unmapped,
-        "column_mapping": mapping,
+        "sheet_summaries": sheet_summaries,
+        "skipped_sheets": skipped_sheets,
+        "unmapped_fields": last_unmapped,
+        "column_mapping": last_mapping,
     }
 
 
@@ -717,3 +714,66 @@ def clear_vendor_books(project_id: int, user_id: int) -> dict:
         "deleted_batches": batches_count,
         "preserved_selection_items": preserved_count,
     }
+
+
+def _read_library_sheet(
+    file_bytes: bytes, engine: str, sheet_name
+) -> tuple | None:
+    """
+    Detect header and match columns for one sheet.
+    Returns (df, mapping, unmapped) if the sheet has isbn or title mapping, else None.
+    """
+    df = _read_excel_with_detected_header(
+        file_bytes, engine, LIBRARY_COLUMN_HINTS, sheet_name=sheet_name
+    )
+    df.columns = [str(c).strip() for c in df.columns]
+    mapping, unmapped = _match_columns(list(df.columns), LIBRARY_COLUMN_HINTS)
+    if "isbn" not in mapping.values() and "title" not in mapping.values():
+        return None
+    return df, mapping, unmapped
+
+
+def _insert_library_holding_rows(conn, batch_id: int, df, mapping: dict) -> int:
+    """Insert rows from one sheet into library_holdings. Returns count inserted."""
+    reverse_map = {v: k for k, v in mapping.items()}
+    records_inserted = 0
+
+    for _, row in df.iterrows():
+        raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
+
+        def get_field(field: str):
+            src = reverse_map.get(field)
+            if src:
+                v = raw.get(src)
+                return v if v else None
+            return None
+
+        isbn_raw = get_field("isbn")
+        title = get_field("title")
+        if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
+            continue
+        isbn_norm = normalize_isbn(isbn_raw)
+        isbn_status = get_isbn_status(isbn_raw)
+
+        conn.execute(
+            "INSERT INTO library_holdings"
+            "(batch_id, isbn, isbn_normalized, title, author, publisher, publish_year, "
+            "price, library_record_id, isbn_status, raw_row) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                batch_id,
+                isbn_raw,
+                isbn_norm,
+                title,
+                get_field("author"),
+                get_field("publisher"),
+                get_field("publish_year"),
+                _to_float(get_field("price")),
+                get_field("library_record_id"),
+                isbn_status,
+                json.dumps(raw, ensure_ascii=False),
+            ),
+        )
+        records_inserted += 1
+
+    return records_inserted

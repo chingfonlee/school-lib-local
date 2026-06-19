@@ -239,10 +239,22 @@ async function uploadHoldings(file) {
   fd.append('file', file);
   try {
     const result = await api('/api/imports/holdings', { method: 'POST', body: fd });
+    const replaced = result.replaced ? '已覆蓋既有館藏，' : '';
+    let sheetInfo = '';
+    if (result.sheet_summaries && result.sheet_summaries.length > 1) {
+      sheetInfo = '<br>各工作表：' + result.sheet_summaries
+        .map(s => `${s.sheet_name}（${s.record_count} 筆）`).join('、');
+    }
+    let skippedInfo = '';
+    if (result.skipped_sheets && result.skipped_sheets.length) {
+      skippedInfo = '<br>略過工作表：' + result.skipped_sheets
+        .map(s => s.sheet_name).join('、');
+    }
     el.innerHTML = `
       <div class="alert alert-success">
-        ✓ 匯入完成：共 <strong>${result.record_count}</strong> 筆
-        ${result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}` : ''}
+        ✓ ${replaced}共 <strong>${result.record_count}</strong> 筆
+        ${result.unmapped_fields && result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}` : ''}
+        ${sheetInfo}${skippedInfo}
       </div>`;
     showToast('館藏匯入完成');
   } catch (e) {
