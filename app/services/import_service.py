@@ -1,5 +1,6 @@
 import json
 import io
+import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -521,7 +522,7 @@ def _resolve_formula_purchase_price(formula: str, list_price: float | None) -> f
     if multiplier is None:
         return None
     if re.search(r'ROUND\s*\(', formula, re.IGNORECASE):
-        return float(round(list_price * multiplier))
+        return float(math.floor(list_price * multiplier + 0.5))
     return list_price * multiplier
 
 
