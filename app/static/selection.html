@@ -60,17 +60,7 @@
     <span id="result-count" style="font-size:13px;color:#666"></span>
   </div>
 
-  <div class="card" style="padding:0">
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>書名</th><th>作者</th><th>ISBN</th><th>定價</th><th>單價</th>
-          <th>獲獎項目</th><th>完整度</th><th style="width:100px">採購數量</th><th>操作</th>
-        </tr></thead>
-        <tbody id="book-body"></tbody>
-      </table>
-    </div>
-  </div>
+  <div id="book-grid" class="books-grid"></div>
 </div>
 <div id="toast"></div>
 <script src="/js/common.js"></script>
@@ -120,12 +110,12 @@ function applyFilter() {
 }
 
 function render(books) {
-  const tbody = document.getElementById('book-body');
+  const grid = document.getElementById('book-grid');
   if (!books.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;padding:40px">無資料</td></tr>';
+    grid.innerHTML = '<div style="text-align:center;color:#999;padding:60px 0">無資料</div>';
     return;
   }
-  tbody.innerHTML = books.map(b => {
+  grid.innerHTML = books.map(b => {
     const ov = JSON.parse(b.user_overrides || '{}');
     const title = ov.title || b.title || '—';
     const author = ov.author || b.author || '—';
@@ -134,40 +124,41 @@ function render(books) {
     const pp = ov.purchase_price || b.purchase_price;
     const award = ov.award_item || b.award_item || '';
     const qty = selMap[b.id] || 0;
+    const holdingsUrl = b.isbn_normalized
+      ? `/holdings.html?isbn=${encodeURIComponent(b.isbn_normalized)}`
+      : `/holdings.html?q=${encodeURIComponent(b.title || '')}`;
     const extra = b.extra_fields ? (() => { try { return JSON.parse(b.extra_fields); } catch(e) { return null; } })() : null;
     const hasExtra = extra && Object.keys(extra).length > 0;
-    const extraRow = hasExtra ? `
-    <tr id="extra-${b.id}" style="display:none">
-      <td colspan="9" style="background:#f5f5f7;padding:6px 16px;font-size:13px;color:#444">
-        ${Object.entries(extra).map(([k,v]) => `<span style="margin-right:14px"><span style="color:#6e6e73">${k}：</span>${v}</span>`).join('')}
-      </td>
-    </tr>` : '';
+    const ctaBtn = qty > 0
+      ? `<button class="book-cta" id="cta-${b.id}" disabled>已加入</button>`
+      : `<button class="book-cta" id="cta-${b.id}" onclick="addBook(${b.id})">＋ 加入選書</button>`;
+    const extraSection = hasExtra
+      ? `<div id="extra-${b.id}" style="display:none;padding:8px 16px;font-size:12px;color:#444;background:#f5f5f7">
+           ${Object.entries(extra).map(([k,v]) => `<span style="margin-right:12px"><span style="color:#6e6e73">${k}：</span>${v}</span>`).join('')}
+         </div>`
+      : '';
     return `
-    <tr id="row-${b.id}">
-      <td>${title}</td>
-      <td>${author}</td>
-      <td style="font-size:12px">${isbn}</td>
-      <td>${lp ? formatCurrency(lp) : '—'}</td>
-      <td>${pp ? formatCurrency(pp) : '—'}</td>
-      <td style="font-size:12px;max-width:140px;white-space:normal">${award || '—'}</td>
-      <td>${badge(b.completeness_status || 'unknown')}</td>
-      <td>
-        <input class="qty-input" type="number" min="0" value="${qty}" data-id="${b.id}"
-          onchange="updateQty(${b.id}, this.value)">
-      </td>
-      <td>
-        <a href="#" onclick="toggleEdit(${b.id})" style="font-size:13px">修正資料</a>
-        ${(() => {
-          const holdingsUrl = b.isbn_normalized
-            ? `/holdings.html?isbn=${encodeURIComponent(b.isbn_normalized)}`
-            : `/holdings.html?q=${encodeURIComponent(b.title || '')}`;
-          return `<br><a href="${holdingsUrl}" target="_blank" rel="noopener" style="font-size:13px">查館藏</a>`;
-        })()}
-        ${hasExtra ? `<br><a href="#" onclick="toggleExtra(${b.id})" style="font-size:12px;color:#6e6e73">書商資訊</a>` : ''}
-      </td>
-    </tr>
-    <tr id="edit-${b.id}" style="display:none">
-      <td colspan="9">
+    <div class="book-card">
+      <div class="book-card-body">
+        <div class="book-card-title">${title}</div>
+        <div class="book-card-meta">${author}</div>
+        <div class="book-card-isbn">ISBN: ${isbn}</div>
+        <div class="book-card-price">
+          <span>定價 ${lp ? formatCurrency(lp) : '—'}</span>
+          <span class="purchase">採購 ${pp ? formatCurrency(pp) : '—'}</span>
+        </div>
+        ${award ? `<div class="book-card-award">${award}</div>` : ''}
+        <div style="margin-top:2px">${badge(b.completeness_status || 'unknown')}</div>
+      </div>
+      <div class="book-card-footer">
+        <div class="book-card-links">
+          <a href="#" onclick="toggleEdit(${b.id}); return false;">修正資料</a>
+          <a href="${holdingsUrl}" target="_blank" rel="noopener">查館藏</a>
+          ${hasExtra ? `<a href="#" onclick="toggleExtra(${b.id}); return false;">書商資訊</a>` : ''}
+        </div>
+        ${ctaBtn}
+      </div>
+      <div id="edit-${b.id}" class="book-card-edit" style="display:none">
         <div class="inline-edit open">
           <div class="field-row"><label>書名</label><input type="text" value="${(ov.title||b.title||'').replace(/"/g,'&quot;')}" data-field="title" data-bookid="${b.id}"></div>
           <div class="field-row"><label>作者</label><input type="text" value="${(ov.author||b.author||'').replace(/"/g,'&quot;')}" data-field="author" data-bookid="${b.id}"></div>
@@ -178,24 +169,29 @@ function render(books) {
           <button class="btn btn-primary btn-sm" onclick="saveOverrides(${b.id})">儲存修正</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleEdit(${b.id})">取消</button>
         </div>
-      </td>
-    </tr>
-    ${extraRow}`;
+      </div>
+      ${extraSection}
+    </div>`;
   }).join('');
 }
 
-async function updateQty(bookId, val) {
-  const qty = parseInt(val) || 0;
+async function addBook(bookId) {
   try {
     await api('/api/selections/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project_id: pid, vendor_book_id: bookId, quantity: qty })
+      body: JSON.stringify({ project_id: pid, vendor_book_id: bookId, quantity: 1 })
     });
-    selMap[bookId] = qty;
+    selMap[bookId] = 1;
     await refreshBudget();
+    const btn = document.getElementById('cta-' + bookId);
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '已加入';
+      btn.onclick = null;
+    }
   } catch (e) {
-    showToast('更新失敗：' + e.message);
+    showToast('加入失敗：' + e.message);
   }
 }
 
@@ -208,13 +204,13 @@ async function refreshBudget() {
 }
 
 function toggleEdit(id) {
-  const row = document.getElementById('edit-' + id);
-  row.style.display = row.style.display === 'none' ? '' : 'none';
+  const el = document.getElementById('edit-' + id);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function toggleExtra(id) {
   const row = document.getElementById('extra-' + id);
-  if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+  if (row) row.style.display = row.style.display === 'none' ? 'block' : 'none';
 }
 
 async function saveOverrides(bookId) {
@@ -222,7 +218,7 @@ async function saveOverrides(bookId) {
   const overrides = {};
   inputs.forEach(inp => { overrides[inp.dataset.field] = inp.value.trim(); });
   try {
-    const res = await api(`/api/books/${bookId}/overrides`, {
+    await api(`/api/books/${bookId}/overrides`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ overrides })
