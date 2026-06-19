@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-excel-formula-purchase-price
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-06-19
 # Project Status
 
 ## Active Tasks
+
+- id: task-excel-formula-purchase-price
+  status: active
+  branch: fix/task-excel-formula-purchase-price
+  base_branch: main
+  last_log: ""
+  last_agent: claude
 
 - id: task-selection-card-ui
   status: done

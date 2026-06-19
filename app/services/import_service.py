@@ -1,5 +1,6 @@
 import json
 import io
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -183,6 +184,12 @@ def confirm_import(
     engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
     sheet = sheet_name if sheet_name else 0
 
+    pp_formula_map: dict = {}
+    if engine == "openpyxl":
+        pp_src_col = mappings.get("purchase_price")
+        if pp_src_col:
+            pp_formula_map = _build_formula_fallback(file_bytes, sheet, header_row, pp_src_col)
+
     df = pd.read_excel(
         io.BytesIO(file_bytes),
         engine=engine,
@@ -229,10 +236,17 @@ def confirm_import(
             if val:
                 extra_fields[col_name] = val
 
+        list_price = _to_float(get_field("list_price"))
+        purchase_price = _to_float(get_field("purchase_price"))
+        if purchase_price is None and list_price is not None:
+            formula = pp_formula_map.get(enum_idx)
+            if formula:
+                purchase_price = _resolve_formula_purchase_price(formula, list_price)
+
         book = {
             "title": title,
-            "list_price": _to_float(get_field("list_price")),
-            "purchase_price": _to_float(get_field("purchase_price")),
+            "list_price": list_price,
+            "purchase_price": purchase_price,
             "author": get_field("author"),
             "publisher": get_field("publisher"),
             "award_item": get_field("award_item"),
@@ -392,7 +406,13 @@ def import_vendor_books(
     records_inserted = 0
     reverse_map = {v: k for k, v in mapping.items()}
 
-    for _, row in df.iterrows():
+    pp_formula_map: dict = {}
+    pp_src_col = reverse_map.get("purchase_price")
+    if pp_src_col:
+        _vb_header_row = _detect_header_row(file_bytes, "openpyxl", VENDOR_COLUMN_HINTS)
+        pp_formula_map = _build_formula_fallback(file_bytes, 0, _vb_header_row, pp_src_col)
+
+    for enum_idx, (_, row) in enumerate(df.iterrows()):
         raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
 
         def get_field(field: str):
@@ -411,10 +431,17 @@ def import_vendor_books(
 
         award_item = get_field("award_item")
 
+        list_price = _to_float(get_field("list_price"))
+        purchase_price = _to_float(get_field("purchase_price"))
+        if purchase_price is None and list_price is not None:
+            formula = pp_formula_map.get(enum_idx)
+            if formula:
+                purchase_price = _resolve_formula_purchase_price(formula, list_price)
+
         book = {
             "title": title,
-            "list_price": _to_float(get_field("list_price")),
-            "purchase_price": _to_float(get_field("purchase_price")),
+            "list_price": list_price,
+            "purchase_price": purchase_price,
             "author": get_field("author"),
             "publisher": get_field("publisher"),
             "award_item": award_item,
@@ -471,3 +498,69 @@ def _to_float(v) -> float | None:
         return float(str(v).replace(",", ""))
     except (ValueError, TypeError):
         return None
+
+
+def _parse_formula_multiplier(formula: str) -> float | None:
+    """Extract multiplier from patterns like *75% → 0.75."""
+    m = re.search(r'\*\s*(\d+(?:\.\d+)?)\s*%', formula)
+    if m:
+        return float(m.group(1)) / 100
+    return None
+
+
+def _resolve_formula_purchase_price(formula: str, list_price: float | None) -> float | None:
+    """
+    Compute purchase_price from a formula string and list_price.
+    Supports =ROUND(ref*N%,0) and =ref*N%. Returns None if pattern unrecognised.
+    """
+    if list_price is None:
+        return None
+    multiplier = _parse_formula_multiplier(formula)
+    if multiplier is None:
+        return None
+    if re.search(r'ROUND\s*\(', formula, re.IGNORECASE):
+        return float(round(list_price * multiplier))
+    return list_price * multiplier
+
+
+def _build_formula_fallback(
+    file_bytes: bytes, sheet, header_row: int, pp_src_col: str
+) -> dict:
+    """
+    Return {data_row_0based: formula_string} for the purchase_price column.
+    data_row_0based=0 is the first data row (DataFrame index 0).
+    Reads openpyxl with data_only=False to capture formula strings.
+    Silently returns {} on any error.
+    """
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(file_bytes), data_only=False, read_only=True)
+        ws = wb[sheet] if isinstance(sheet, str) else list(wb.worksheets)[int(sheet) if sheet else 0]
+
+        # Locate the purchase_price column by header name (Excel rows are 1-based)
+        excel_header_row = header_row + 1
+        pp_col_idx = None
+        for header_cells in ws.iter_rows(min_row=excel_header_row, max_row=excel_header_row):
+            for cell in header_cells:
+                if cell.value and str(cell.value).strip() == pp_src_col:
+                    pp_col_idx = cell.column
+                    break
+
+        if pp_col_idx is None:
+            wb.close()
+            return {}
+
+        # Data rows start at header_row + 2 (Excel 1-based)
+        # data_row_0based = cell.row - (header_row + 2), aligns with DataFrame enum_idx
+        excel_data_start = header_row + 2
+        formula_map: dict = {}
+        for row in ws.iter_rows(min_row=excel_data_start, min_col=pp_col_idx, max_col=pp_col_idx):
+            for cell in row:
+                val = cell.value
+                if val and isinstance(val, str) and val.startswith('='):
+                    formula_map[cell.row - excel_data_start] = val
+
+        wb.close()
+        return formula_map
+    except Exception:
+        return {}
