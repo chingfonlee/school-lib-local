@@ -1,12 +1,12 @@
 ---
-session_state: open
-current_action: executing
-current_task: task-reimport-replace-vendor-books
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
 last_agent: claude
-updated: 2026-06-19
+updated: 2026-06-20
 ---
 
 # Project Status
@@ -14,10 +14,10 @@ updated: 2026-06-19
 ## Active Tasks
 
 - id: task-reimport-replace-vendor-books
-  status: active
-  branch: fix/task-reimport-replace-vendor-books
+  status: done
+  branch: ""
   base_branch: main
-  last_log: ""
+  last_log: 2026-06-19-235953.md
   last_agent: claude
 
 - id: task-excel-formula-purchase-price
