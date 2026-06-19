@@ -200,6 +200,7 @@ def confirm_import(
     df.columns = [str(c).strip() for c in df.columns]
 
     conn = get_connection()
+    _clear_vendor_books_for_project(conn, project_id)
     batch_row = conn.execute(
         "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
         "imported_by, imported_at) VALUES (?, 'vendor_books', ?, ?, ?, ?)",
@@ -396,6 +397,7 @@ def import_vendor_books(
     if column_overrides:
         mapping.update(column_overrides)
 
+    _clear_vendor_books_for_project(conn, project_id)
     batch_row = conn.execute(
         "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
         "imported_by, imported_at) VALUES (?, 'vendor_books', ?, ?, ?, ?)",
@@ -564,3 +566,41 @@ def _build_formula_fallback(
         return formula_map
     except Exception:
         return {}
+
+
+def _clear_vendor_books_for_project(conn, project_id: int) -> None:
+    """
+    Remove all vendor_books-related data for a project before re-import.
+    Deletion order: selection_items → book_matches → vendor_books → import_batches.
+    Only touches batch_type='vendor_books'; does NOT commit — caller owns the transaction.
+    """
+    old_batch_ids = [
+        r[0]
+        for r in conn.execute(
+            "SELECT id FROM import_batches WHERE project_id=? AND batch_type='vendor_books'",
+            (project_id,),
+        ).fetchall()
+    ]
+    if not old_batch_ids:
+        return
+
+    ph = ",".join("?" * len(old_batch_ids))
+
+    conn.execute(
+        f"DELETE FROM selection_items WHERE project_id=? AND vendor_book_id IN "
+        f"(SELECT id FROM vendor_books WHERE batch_id IN ({ph}))",
+        [project_id] + old_batch_ids,
+    )
+    conn.execute(
+        f"DELETE FROM book_matches WHERE vendor_book_id IN "
+        f"(SELECT id FROM vendor_books WHERE batch_id IN ({ph}))",
+        old_batch_ids,
+    )
+    conn.execute(
+        f"DELETE FROM vendor_books WHERE batch_id IN ({ph})",
+        old_batch_ids,
+    )
+    conn.execute(
+        f"DELETE FROM import_batches WHERE id IN ({ph})",
+        old_batch_ids,
+    )
