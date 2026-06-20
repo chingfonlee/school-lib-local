@@ -35,11 +35,85 @@ def upsert_selection(
             (quantity, notes, now, project_id, vendor_book_id),
         )
     else:
+        snap = conn.execute(
+            "SELECT vb.*, ib.id AS source_batch_id, ib.original_filename, "
+            "(SELECT bm.match_status FROM book_matches bm "
+            "  WHERE bm.vendor_book_id = vb.id "
+            "    AND bm.match_status != 'same_title_different_isbn' "
+            "  ORDER BY bm.id DESC LIMIT 1) AS match_status, "
+            "(SELECT bm.holding_id FROM book_matches bm "
+            "  WHERE bm.vendor_book_id = vb.id "
+            "    AND bm.match_status != 'same_title_different_isbn' "
+            "  ORDER BY bm.id DESC LIMIT 1) AS holding_id "
+            "FROM vendor_books vb "
+            "JOIN import_batches ib ON ib.id = vb.batch_id "
+            "WHERE vb.id = ?",
+            (vendor_book_id,),
+        ).fetchone()
+
+        if snap is None:
+            conn.close()
+            raise ValueError(f"vendor_book_id={vendor_book_id} 不存在，無法建立選書快照")
+
+        snap = dict(snap)
+        completeness = snap.get("completeness_status") or "unknown"
+
         conn.execute(
-            "INSERT INTO selection_items"
-            "(project_id, vendor_book_id, selected_quantity, notes, created_by, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (project_id, vendor_book_id, quantity, notes, user_id, now, now),
+            "INSERT INTO selection_items("
+            "project_id, vendor_book_id, "
+            "source_batch_id, source_original_filename, source_row_number, "
+            "selected_quantity, notes, "
+            "title, author, publisher, isbn, isbn_normalized, isbn_status, "
+            "publish_date, list_price, purchase_price, "
+            "award_item, vendor_seq, age_range, "
+            "category, book_type, policy_topic, summary, "
+            "source_url, recommendation_source, eligibility_label, award_notes, "
+            "completeness_status, "
+            "match_status_at_selection, holding_id_at_selection, "
+            "user_overrides, extra_fields, raw_row, "
+            "created_by, created_at, updated_at"
+            ") VALUES ("
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+            ")",
+            (
+                project_id,
+                vendor_book_id,
+                snap.get("source_batch_id"),
+                snap.get("original_filename"),
+                snap.get("source_row_number"),
+                quantity,
+                notes,
+                snap.get("title"),
+                snap.get("author"),
+                snap.get("publisher"),
+                snap.get("isbn"),
+                snap.get("isbn_normalized"),
+                snap.get("isbn_status"),
+                snap.get("publish_date"),
+                snap.get("list_price"),
+                snap.get("purchase_price"),
+                snap.get("award_item"),
+                snap.get("vendor_seq"),
+                snap.get("age_range"),
+                snap.get("category"),
+                snap.get("book_type"),
+                snap.get("policy_topic"),
+                snap.get("summary"),
+                snap.get("source_url"),
+                snap.get("recommendation_source"),
+                snap.get("eligibility_label"),
+                snap.get("award_notes"),
+                completeness,
+                snap.get("match_status"),
+                snap.get("holding_id"),
+                None,
+                snap.get("extra_fields"),
+                snap.get("raw_row"),
+                user_id,
+                now,
+                now,
+            ),
         )
 
     conn.commit()
@@ -50,10 +124,8 @@ def upsert_selection(
 def get_selection_summary(project_id: int) -> dict:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT si.selected_quantity, vb.list_price, vb.purchase_price, "
-        "vb.user_overrides "
+        "SELECT si.selected_quantity, si.list_price, si.purchase_price, si.user_overrides "
         "FROM selection_items si "
-        "JOIN vendor_books vb ON vb.id = si.vendor_book_id "
         "WHERE si.project_id = ?",
         (project_id,),
     ).fetchall()
@@ -81,19 +153,27 @@ def get_selection_summary(project_id: int) -> dict:
 def get_selected_books(project_id: int) -> list:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT si.id as sel_id, si.selected_quantity, si.notes as sel_notes, "
-        "vb.*, "
-        "bm.match_status "
+        "SELECT si.*, "
+        "(SELECT bm.match_status FROM book_matches bm "
+        "  WHERE bm.vendor_book_id = si.vendor_book_id "
+        "    AND bm.match_status != 'same_title_different_isbn' "
+        "  ORDER BY bm.id DESC LIMIT 1) AS current_match_status, "
+        "(vb.id IS NOT NULL) AS vendor_book_still_exists "
         "FROM selection_items si "
-        "JOIN vendor_books vb ON vb.id = si.vendor_book_id "
-        "LEFT JOIN book_matches bm ON bm.vendor_book_id = vb.id "
-        "  AND bm.match_status != 'same_title_different_isbn' "
-        "WHERE si.project_id = ? "
-        "ORDER BY si.id",
+        "LEFT JOIN vendor_books vb ON vb.id = si.vendor_book_id "
+        "WHERE si.project_id = ? ORDER BY si.id",
         (project_id,),
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["sel_id"] = d["id"]              # selection_items.id as sel_id
+        d["id"] = d.get("vendor_book_id")  # vendor_book_id as id for frontend compat
+        d["sel_notes"] = d.get("notes")    # notes alias for backward compat
+        result.append(d)
+    return result
 
 
 def clear_all_selections(project_id: int) -> dict:
@@ -105,6 +185,35 @@ def clear_all_selections(project_id: int) -> dict:
     conn.commit()
     conn.close()
     return {"deleted_count": count}
+
+
+def update_selection_overrides(
+    selection_id: int,
+    overrides_patch: dict,
+    user_id: int,
+) -> dict:
+    conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+
+    row = conn.execute(
+        "SELECT user_overrides FROM selection_items WHERE id = ?",
+        (selection_id,),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        raise ValueError(f"selection_items.id={selection_id} 不存在")
+
+    existing = json.loads(row["user_overrides"] or "{}")
+    existing.update(overrides_patch)
+    merged = {k: v for k, v in existing.items() if v not in (None, "")}
+
+    conn.execute(
+        "UPDATE selection_items SET user_overrides = ?, updated_at = ? WHERE id = ?",
+        (json.dumps(merged, ensure_ascii=False) if merged else None, now, selection_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"selection_id": selection_id, "user_overrides": merged}
 
 
 def _resolve_price(db_val, override_val) -> float | None:

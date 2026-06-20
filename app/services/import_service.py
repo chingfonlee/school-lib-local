@@ -32,6 +32,12 @@ VENDOR_COLUMN_HINTS = {
     "purchase_price": ["單價", "採購價", "purchase_price"],
     "publisher": ["出版社", "publisher"],
     "age_range": ["適合年齡", "年齡", "age_range"],
+    "category": ["分類", "category"],
+    "book_type": ["類型", "書本類型", "book_type"],
+    "summary": ["summary_80_120", "摘要", "summary"],
+    "source_url": ["連結", "url", "link", "source_url"],
+    "recommendation_source": ["award_template", "推薦來源", "recommendation_source"],
+    "eligibility_label": ["eligible_label", "資格標籤", "必選推薦", "eligibility_label"],
 }
 
 
@@ -259,8 +265,9 @@ def confirm_import(
             "INSERT INTO vendor_books"
             "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
             "publish_date, list_price, purchase_price, publisher, age_range, "
-            "isbn_status, completeness_status, extra_fields, source_row_number, raw_row) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
+            "category, book_type, summary, source_url, recommendation_source, eligibility_label) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 batch_id,
                 book["award_item"],
@@ -279,6 +286,12 @@ def confirm_import(
                 json.dumps(extra_fields, ensure_ascii=False) if extra_fields else None,
                 source_row_number,
                 json.dumps(raw, ensure_ascii=False),
+                get_field("category"),
+                get_field("book_type"),
+                get_field("summary"),
+                get_field("source_url"),
+                get_field("recommendation_source"),
+                get_field("eligibility_label"),
             ),
         )
         records_inserted += 1
@@ -455,8 +468,9 @@ def import_vendor_books(
             "INSERT INTO vendor_books"
             "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
             "publish_date, list_price, purchase_price, publisher, age_range, "
-            "isbn_status, completeness_status, extra_fields, source_row_number, raw_row) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
+            "category, book_type, summary, source_url, recommendation_source, eligibility_label) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 batch_id,
                 award_item,
@@ -475,6 +489,12 @@ def import_vendor_books(
                 None,
                 None,
                 json.dumps(raw, ensure_ascii=False),
+                get_field("category"),
+                get_field("book_type"),
+                get_field("summary"),
+                get_field("source_url"),
+                get_field("recommendation_source"),
+                get_field("eligibility_label"),
             ),
         )
         records_inserted += 1
@@ -571,8 +591,9 @@ def _build_formula_fallback(
 
 def _clear_vendor_books_for_project(conn, project_id: int) -> None:
     """
-    Remove all vendor_books-related data for a project before re-import.
-    Deletion order: selection_items → book_matches → vendor_books → import_batches.
+    Remove vendor_books-related source data for a project before re-import.
+    Deletion order: book_matches → vendor_books → import_batches.
+    selection_items are NOT deleted — they carry self-contained snapshots.
     Only touches batch_type='vendor_books'; does NOT commit — caller owns the transaction.
     """
     old_batch_ids = [
@@ -587,11 +608,6 @@ def _clear_vendor_books_for_project(conn, project_id: int) -> None:
 
     ph = ",".join("?" * len(old_batch_ids))
 
-    conn.execute(
-        f"DELETE FROM selection_items WHERE project_id=? AND vendor_book_id IN "
-        f"(SELECT id FROM vendor_books WHERE batch_id IN ({ph}))",
-        [project_id] + old_batch_ids,
-    )
     conn.execute(
         f"DELETE FROM book_matches WHERE vendor_book_id IN "
         f"(SELECT id FROM vendor_books WHERE batch_id IN ({ph}))",

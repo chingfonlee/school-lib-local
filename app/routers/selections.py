@@ -7,6 +7,7 @@ from app.services.selection_service import (
     get_selection_summary,
     get_selected_books,
     clear_all_selections,
+    update_selection_overrides,
 )
 
 router = APIRouter(prefix="/api/selections", tags=["selections"])
@@ -17,6 +18,10 @@ class SelectionUpsert(BaseModel):
     vendor_book_id: int
     quantity: int
     notes: str | None = None
+
+
+class OverridesPatch(BaseModel):
+    overrides: dict
 
 
 @router.get("/")
@@ -47,4 +52,17 @@ async def delete_all_selections(
     user_id: int = Depends(require_auth),
 ):
     result = clear_all_selections(project_id)
+    return result
+
+
+@router.patch("/{selection_id}/overrides")
+async def patch_selection_overrides(
+    selection_id: int,
+    body: OverridesPatch,
+    user_id: int = Depends(require_auth),
+):
+    try:
+        result = update_selection_overrides(selection_id, body.overrides, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     return result

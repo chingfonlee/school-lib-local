@@ -49,10 +49,6 @@ def _resolve_field(book: dict, field: str) -> str:
     v = book.get(field)
     if v not in (None, ""):
         return str(v)
-    raw = json.loads(book.get("raw_row") or "{}")
-    rv = raw.get(field)
-    if rv not in (None, ""):
-        return str(rv)
     return ""
 
 
@@ -114,18 +110,29 @@ def export_local_culture(settings: ExportSettings) -> str:
 
     conn = get_connection()
     books = conn.execute(
-        "SELECT vb.*, si.selected_quantity, si.notes as sel_notes, bm.match_status "
+        "SELECT si.*, "
+        "COALESCE("
+        "  (SELECT bm.match_status FROM book_matches bm "
+        "   WHERE bm.vendor_book_id = si.vendor_book_id "
+        "     AND bm.match_status != 'same_title_different_isbn' "
+        "   ORDER BY bm.id DESC LIMIT 1), "
+        "  si.match_status_at_selection, 'available'"
+        ") AS match_status "
         "FROM selection_items si "
-        "JOIN vendor_books vb ON vb.id = si.vendor_book_id "
-        "LEFT JOIN book_matches bm ON bm.vendor_book_id = vb.id "
-        "  AND bm.match_status != 'same_title_different_isbn' "
-        "WHERE si.project_id = ? AND (bm.match_status = 'available' OR bm.match_status IS NULL) "
-        "ORDER BY vb.vendor_seq, vb.id",
+        "WHERE si.project_id = ? AND si.selected_quantity > 0 "
+        "  AND COALESCE("
+        "    (SELECT bm.match_status FROM book_matches bm "
+        "     WHERE bm.vendor_book_id = si.vendor_book_id "
+        "       AND bm.match_status != 'same_title_different_isbn' "
+        "     ORDER BY bm.id DESC LIMIT 1), "
+        "    si.match_status_at_selection, 'available'"
+        "  ) IN ('available', 'missing_isbn', 'invalid_isbn') "
+        "ORDER BY si.vendor_seq, si.id",
         (settings.project_id,),
     ).fetchall()
     conn.close()
 
-    exportable = [dict(b) for b in books if b["selected_quantity"] > 0]
+    exportable = [dict(b) for b in books]
 
     extra_rows_needed = max(0, len(exportable) - (template_end - data_start + 1))
     if extra_rows_needed > 0:
@@ -159,7 +166,7 @@ def export_local_culture(settings: ExportSettings) -> str:
         ws.cell(row=row, column=col("price")).value = price if price else None
         ws.cell(row=row, column=col("subtotal")).value = subtotal if subtotal else None
         ws.cell(row=row, column=col("award_item")).value = _resolve_field(book, "award_item")
-        ws.cell(row=row, column=col("notes")).value = book.get("sel_notes") or None
+        ws.cell(row=row, column=col("notes")).value = book.get("notes") or None
 
         total_qty += quantity
         total_amount += subtotal

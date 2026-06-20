@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-selection-record-snapshot
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,20 @@ updated: 2026-06-20
 # Project Status
 
 ## Active Tasks
+
+- id: task-selection-record-snapshot
+  status: active
+  branch: fix/task-selection-record-snapshot
+  base_branch: main
+  last_log: ""
+  last_agent: ""
+
+- id: task-library-holdings-reimport-multisheet
+  status: paused
+  branch: fix/task-library-holdings-reimport-multisheet
+  base_branch: main
+  last_log: ""
+  last_agent: claude
 
 - id: task-reimport-replace-vendor-books
   status: done

@@ -6,11 +6,15 @@ from app.database import get_connection
 def check_export_readiness(project_id: int, price_field: str) -> dict:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT si.selected_quantity, vb.*, bm.match_status "
+        "SELECT si.*, "
+        "COALESCE("
+        "  (SELECT bm.match_status FROM book_matches bm "
+        "   WHERE bm.vendor_book_id = si.vendor_book_id "
+        "     AND bm.match_status != 'same_title_different_isbn' "
+        "   ORDER BY bm.id DESC LIMIT 1), "
+        "  si.match_status_at_selection"
+        ") AS resolved_match_status "
         "FROM selection_items si "
-        "JOIN vendor_books vb ON vb.id = si.vendor_book_id "
-        "LEFT JOIN book_matches bm ON bm.vendor_book_id = vb.id "
-        "  AND bm.match_status != 'same_title_different_isbn' "
         "WHERE si.project_id = ?",
         (project_id,),
     ).fetchall()
@@ -26,7 +30,7 @@ def check_export_readiness(project_id: int, price_field: str) -> dict:
     for r in rows:
         total_selected += 1
         overrides = json.loads(r["user_overrides"] or "{}")
-        match_status = r["match_status"] or "unknown"
+        match_status = r["resolved_match_status"] or "unknown"
         comp_status = r["completeness_status"]
 
         if match_status == "already_owned":
@@ -66,9 +70,7 @@ def check_export_readiness(project_id: int, price_field: str) -> dict:
         can_export = len(missing_blocking) == 0 and match_status != "already_owned"
 
         if not can_export:
-            if match_status == "already_owned":
-                already_owned_count = already_owned_count  # already counted
-            else:
+            if match_status != "already_owned":
                 missing_required_count += 1
         elif missing_review:
             needs_review_count += 1
@@ -77,7 +79,7 @@ def check_export_readiness(project_id: int, price_field: str) -> dict:
 
         details.append(
             {
-                "vendor_book_id": r["id"],
+                "vendor_book_id": r["vendor_book_id"],
                 "title": title or r["title"] or "",
                 "match_status": match_status,
                 "completeness_status": comp_status,
