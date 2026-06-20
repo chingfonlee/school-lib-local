@@ -61,6 +61,13 @@
   </div>
 
   <div id="book-grid" class="books-grid"></div>
+
+  <div id="cleared-section" style="display:none;margin-top:32px">
+    <h3 style="font-size:15px;color:#6e6e73;border-top:1px solid #e0e0e0;padding-top:20px;margin-bottom:12px">
+      來源書單已清除 — 以下為保存的採購紀錄快照
+    </h3>
+    <div id="cleared-grid" class="books-grid"></div>
+  </div>
 </div>
 <div id="toast"></div>
 <script src="/js/common.js"></script>
@@ -97,6 +104,8 @@ async function loadData() {
   document.getElementById('budget-list').textContent = 'NT$ ' + formatCurrency(summary.total_list_price);
   document.getElementById('budget-purchase').textContent = 'NT$ ' + formatCurrency(summary.total_purchase_price);
   applyFilter();
+  const clearedItems = selData.items.filter(s => !s.vendor_book_still_exists);
+  renderClearedItems(clearedItems);
 }
 
 function applyFilter() {
@@ -225,6 +234,77 @@ async function saveOverrides(bookId) {
     });
     showToast('修正已儲存');
     toggleEdit(bookId);
+    await loadData();
+  } catch (e) {
+    showToast('儲存失敗：' + e.message);
+  }
+}
+
+function renderClearedItems(items) {
+  const section = document.getElementById('cleared-section');
+  const grid = document.getElementById('cleared-grid');
+  if (!items.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  grid.innerHTML = items.map(s => {
+    const ov = JSON.parse(s.user_overrides || '{}');
+    const title = ov.title || s.title || '—';
+    const author = ov.author || s.author || '—';
+    const isbn = s.isbn_normalized || s.isbn || '—';
+    const lp = ov.list_price || s.list_price;
+    const pp = ov.purchase_price || s.purchase_price;
+    const award = ov.award_item || s.award_item || '';
+    return `
+    <div class="book-card" style="border-color:#d1d1d6;opacity:0.9">
+      <div class="book-card-body">
+        <div style="font-size:11px;color:#6e6e73;margin-bottom:4px">📦 保存紀錄快照</div>
+        <div class="book-card-title">${title}</div>
+        <div class="book-card-meta">${author}</div>
+        <div class="book-card-isbn">ISBN: ${isbn}</div>
+        <div class="book-card-price">
+          <span>定價 ${lp ? formatCurrency(lp) : '—'}</span>
+          <span class="purchase">採購 ${pp ? formatCurrency(pp) : '—'}</span>
+        </div>
+        ${award ? `<div class="book-card-award">${award}</div>` : ''}
+        <div style="margin-top:4px;font-size:12px;color:#6e6e73">數量：${s.selected_quantity}</div>
+      </div>
+      <div class="book-card-footer">
+        <div class="book-card-links">
+          <a href="#" onclick="toggleClearedEdit(${s.sel_id}); return false;">修正資料</a>
+        </div>
+      </div>
+      <div id="cleared-edit-${s.sel_id}" class="book-card-edit" style="display:none">
+        <div class="inline-edit open">
+          <div class="field-row"><label>書名</label><input type="text" value="${(ov.title||s.title||'').replace(/"/g,'&quot;')}" data-field="title" data-selid="${s.sel_id}"></div>
+          <div class="field-row"><label>作者</label><input type="text" value="${(ov.author||s.author||'').replace(/"/g,'&quot;')}" data-field="author" data-selid="${s.sel_id}"></div>
+          <div class="field-row"><label>出版社</label><input type="text" value="${(ov.publisher||s.publisher||'').replace(/"/g,'&quot;')}" data-field="publisher" data-selid="${s.sel_id}"></div>
+          <div class="field-row"><label>獲獎項目</label><input type="text" value="${(ov.award_item||s.award_item||'').replace(/"/g,'&quot;')}" data-field="award_item" data-selid="${s.sel_id}"></div>
+          <div class="field-row"><label>定價</label><input type="number" value="${ov.list_price||s.list_price||''}" data-field="list_price" data-selid="${s.sel_id}"></div>
+          <div class="field-row"><label>單價</label><input type="number" value="${ov.purchase_price||s.purchase_price||''}" data-field="purchase_price" data-selid="${s.sel_id}"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveSelectionOverrides(${s.sel_id})">儲存修正</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleClearedEdit(${s.sel_id})">取消</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleClearedEdit(selId) {
+  const el = document.getElementById('cleared-edit-' + selId);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function saveSelectionOverrides(selId) {
+  const inputs = document.querySelectorAll(`[data-selid="${selId}"]`);
+  const overrides = {};
+  inputs.forEach(inp => { overrides[inp.dataset.field] = inp.value.trim(); });
+  try {
+    await api(`/api/selections/${selId}/overrides`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overrides })
+    });
+    showToast('修正已儲存');
+    toggleClearedEdit(selId);
     await loadData();
   } catch (e) {
     showToast('儲存失敗：' + e.message);

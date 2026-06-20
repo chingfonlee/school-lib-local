@@ -49,6 +49,9 @@
   </div>
 
   <div class="stats-row" id="stats-row"></div>
+  <div id="source-note" class="alert alert-info" style="display:none;margin-bottom:8px">
+    部分書目的書商書單來源已清除，比對狀態以選書當時快照為準，不影響匯出準備度判斷。
+  </div>
   <div id="alert-area"></div>
 
   <div class="card" style="padding:0">
@@ -94,11 +97,16 @@ async function runCheck() {
   if (!pid) return;
   const pf = document.getElementById('price-field').value;
   const sm = document.getElementById('subtotal-mode').value;
-  const data = await api(`/api/exports/check?project_id=${pid}&price_field=${pf}&subtotal_mode=${sm}`);
+  const [data, selData] = await Promise.all([
+    api(`/api/exports/check?project_id=${pid}&price_field=${pf}&subtotal_mode=${sm}`),
+    api(`/api/selections/?project_id=${pid}`)
+  ]);
   lastCheck = data;
   renderStats(data);
   renderDetails(data.details);
   renderHint(data);
+  const hasCleared = selData.items.some(s => !s.vendor_book_still_exists);
+  document.getElementById('source-note').style.display = hasCleared ? 'block' : 'none';
 }
 
 function renderStats(d) {

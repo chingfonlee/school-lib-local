@@ -61,6 +61,9 @@
 
   <div class="card" id="preview-card">
     <h2>選書預覽（可匯出書目）</h2>
+    <div id="preview-source-note" class="alert alert-info" style="display:none;margin-bottom:12px">
+      部分書目的書商書單來源已清除，書目資料來自保存的採購紀錄快照，不影響匯出結果。
+    </div>
     <div class="table-wrap">
       <table>
         <thead><tr>
@@ -105,7 +108,9 @@ async function loadPreview() {
   const sel = await api(`/api/selections/?project_id=${pid}`);
   const tbody = document.getElementById('preview-body');
 
-  const items = sel.items.filter(b => b.match_status === 'available' && b.selected_quantity > 0);
+  const items = sel.items.filter(b => b.selected_quantity > 0);
+  const hasCleared = sel.items.some(b => !b.vendor_book_still_exists);
+  document.getElementById('preview-source-note').style.display = hasCleared ? 'block' : 'none';
   if (!items.length) {
     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;padding:30px">尚無選書</td></tr>';
     return;
