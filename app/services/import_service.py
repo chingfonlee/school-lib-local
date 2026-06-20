@@ -10,6 +10,7 @@ import pandas as pd
 from app.database import get_connection
 from app.services.isbn_service import normalize_isbn, get_isbn_status
 from app.services.completeness_service import compute as compute_completeness
+from app.services.match_service import run_match
 
 LIBRARY_COLUMN_HINTS = {
     "isbn": ["b02", "isbn", "條碼", "isbn碼", "isbn號"],
@@ -317,11 +318,16 @@ def confirm_import(
     conn.commit()
     conn.close()
 
-    return {
+    result = {
         "batch_id": batch_id,
         "record_count": records_inserted,
         "skipped_count": skipped_count,
     }
+    try:
+        result["match_stats"] = run_match(project_id)
+    except Exception as e:
+        result["match_rerun_error"] = str(e)
+    return result
 
 
 def import_library_holdings(
@@ -379,7 +385,7 @@ def import_library_holdings(
     finally:
         conn.close()
 
-    return {
+    result = {
         "batch_id": batch_id,
         "replaced": True,
         "record_count": records_inserted,
@@ -387,7 +393,28 @@ def import_library_holdings(
         "skipped_sheets": skipped_sheets,
         "unmapped_fields": last_unmapped,
         "column_mapping": last_mapping,
+        "match_rerun": False,
+        "affected_projects": [],
+        "match_stats_by_project": {},
     }
+    try:
+        conn2 = get_connection()
+        project_ids = [
+            r[0]
+            for r in conn2.execute(
+                "SELECT DISTINCT project_id FROM import_batches "
+                "WHERE batch_type='vendor_books' AND project_id IS NOT NULL"
+            ).fetchall()
+        ]
+        conn2.close()
+        for pid in project_ids:
+            stats = run_match(pid)
+            result["affected_projects"].append(pid)
+            result["match_stats_by_project"][str(pid)] = stats
+        result["match_rerun"] = bool(result["affected_projects"])
+    except Exception as e:
+        result["match_rerun_error"] = str(e)
+    return result
 
 
 def import_vendor_books(
@@ -503,12 +530,17 @@ def import_vendor_books(
     conn.commit()
     conn.close()
 
-    return {
+    result = {
         "batch_id": batch_id,
         "record_count": records_inserted,
         "unmapped_fields": unmapped,
         "column_mapping": mapping,
     }
+    try:
+        result["match_stats"] = run_match(project_id)
+    except Exception as e:
+        result["match_rerun_error"] = str(e)
+    return result
 
 
 def _to_float(v) -> float | None:

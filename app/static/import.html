@@ -250,11 +250,17 @@ async function uploadHoldings(file) {
       skippedInfo = '<br>略過工作表：' + result.skipped_sheets
         .map(s => s.sheet_name).join('、');
     }
+    let matchInfo = '';
+    if (result.match_rerun_error) {
+      matchInfo = `<br><span class="text-warning">⚠ 匯入成功，但自動比對失敗，請到比對頁手動重新比對。</span>`;
+    } else if (result.affected_projects && result.affected_projects.length) {
+      matchInfo = `<br>已重新執行比對（${result.affected_projects.length} 個書單專案）`;
+    }
     el.innerHTML = `
       <div class="alert alert-success">
         ✓ ${replaced}共 <strong>${result.record_count}</strong> 筆
         ${result.unmapped_fields && result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}` : ''}
-        ${sheetInfo}${skippedInfo}
+        ${sheetInfo}${skippedInfo}${matchInfo}
       </div>`;
     showToast('館藏匯入完成');
   } catch (e) {
@@ -434,10 +440,17 @@ async function doConfirmImport() {
 
   try {
     const result = await api('/api/imports/vendor-books/confirm', { method: 'POST', body: fd });
+    let matchSummary = '';
+    if (result.match_rerun_error) {
+      matchSummary = `<br><span class="text-warning">⚠ 匯入成功，但自動比對失敗，請到比對頁手動重新比對。</span>`;
+    } else if (result.match_stats) {
+      matchSummary = `<br>可採購 <strong>${result.match_stats.available ?? 0}</strong> 筆・已館藏 <strong>${result.match_stats.already_owned ?? 0}</strong> 筆`;
+    }
     document.getElementById('step-E-result').innerHTML = `
       <div class="alert alert-success">
         ✓ 匯入完成：共 <strong>${result.record_count}</strong> 筆
         ${result.skipped_count ? `（略過空白列 ${result.skipped_count} 筆）` : ''}
+        ${matchSummary}
       </div>
       <p style="margin-top:8px;font-size:14px"><a href="/match.html">前往比對結果 →</a></p>`;
     btn.textContent = '已匯入';

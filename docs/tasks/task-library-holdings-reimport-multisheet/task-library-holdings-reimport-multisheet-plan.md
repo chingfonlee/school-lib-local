@@ -117,6 +117,85 @@ el.innerHTML = `
 
 不需要。覆蓋策略在應用層實作（先刪後插），不依賴 UNIQUE constraint。現有 schema 已足夠。
 
+### 步驟 8：匯入後自動重新比對（auto-match）
+
+**8a. `import_library_holdings()` 尾端補充（在 `conn.close()` 之後）**
+
+```python
+match_rerun = False
+affected_projects = []
+match_stats_by_project = {}
+try:
+    conn2 = get_connection()
+    project_ids = [
+        r[0] for r in conn2.execute(
+            "SELECT DISTINCT project_id FROM import_batches "
+            "WHERE batch_type='vendor_books' AND project_id IS NOT NULL"
+        ).fetchall()
+    ]
+    conn2.close()
+    for pid in project_ids:
+        stats = run_match(pid)
+        affected_projects.append(pid)
+        match_stats_by_project[str(pid)] = stats
+    match_rerun = bool(affected_projects)
+except Exception as e:
+    result["match_rerun_error"] = str(e)
+```
+
+回傳 dict 新增：`match_rerun`、`affected_projects`、`match_stats_by_project`（以及可能的 `match_rerun_error`）。
+
+**8b. `confirm_import()` 尾端補充**
+
+```python
+match_rerun_error = None
+try:
+    match_stats = run_match(project_id)
+except Exception as e:
+    match_stats = None
+    match_rerun_error = str(e)
+```
+
+回傳 dict 新增：`match_stats`（以及可能的 `match_rerun_error`）。
+
+**8c. `import_vendor_books()` 尾端補充**（legacy path，同 8b 邏輯）
+
+**8d. `import` 語句**
+
+在 `app/services/import_service.py` 頂部 import 區新增：
+
+```python
+from app.services.match_service import run_match
+```
+
+### 步驟 9：修改 `app/static/import.html` — 自動比對結果顯示
+
+**9a. `uploadHoldings()` 成功訊息補充**
+
+在現有 sheetInfo / skippedInfo 之後，依 `result.affected_projects` 與 `result.match_rerun_error` 條件插入：
+
+```javascript
+let matchInfo = '';
+if (result.match_rerun_error) {
+  matchInfo = `<br><span class="text-warning">⚠ 匯入成功，但自動比對失敗，請到比對頁手動重新比對。</span>`;
+} else if (result.affected_projects && result.affected_projects.length) {
+  matchInfo = `<br>已重新執行比對（${result.affected_projects.length} 個書單專案）`;
+}
+```
+
+**9b. confirm_vendor_books 的成功訊息補充**（`uploadVendorBooks()` 函式）
+
+在現有「✓ 匯入完成：共 N 筆」後，依 `result.match_stats` 插入：
+
+```javascript
+let matchSummary = '';
+if (result.match_rerun_error) {
+  matchSummary = `<br><span class="text-warning">⚠ 匯入成功，但自動比對失敗，請到比對頁手動重新比對。</span>`;
+} else if (result.match_stats) {
+  matchSummary = `<br>可採購 <strong>${result.match_stats.available ?? 0}</strong> 筆・已館藏 <strong>${result.match_stats.already_owned ?? 0}</strong> 筆`;
+}
+```
+
 ## 風險與注意事項
 
 1. **FK 刪除順序**：`book_matches.holding_id` 外鍵參照 `library_holdings.id`，`PRAGMA foreign_keys = ON` 有效時，必須先刪 `book_matches` 才能刪 `library_holdings`，否則觸發 FK 違反。`_clear_library_holdings()` 中已明確依序刪除。

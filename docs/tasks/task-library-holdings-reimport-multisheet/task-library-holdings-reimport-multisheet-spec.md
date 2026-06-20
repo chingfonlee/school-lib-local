@@ -46,14 +46,42 @@
 - 若 `sheet_summaries` 含多個有效 sheet，列出各 sheet 名稱與筆數
 - 若有 `skipped_sheets`，顯示略過的 sheet 名稱
 
+### 匯入後比對同步
+
+館藏覆蓋完成後，`book_matches` 因 `_clear_library_holdings` 已被清除，第一次進入比對頁時無可採購 / 已館藏數量。
+
+**修正方式：匯入 commit 成功後自動重新執行 `run_match`**
+
+- **館藏匯入**（`import_library_holdings`）：commit 成功後，查詢目前有 `vendor_books` 的所有 `project_id`，逐一呼叫 `run_match(project_id)`。無 vendor_books project 時不視為錯誤。
+- **書商書單匯入**（`confirm_import` / `import_vendor_books`）：commit 成功後，對本次匯入的 `project_id` 呼叫 `run_match(project_id)`。
+
+Transaction 安全：`run_match` 在匯入 commit **之後**執行，不影響匯入的 rollback 保護。若 `run_match` 失敗，回傳 `match_rerun_error`，不讓匯入失敗。
+
+API 回傳格式擴充（向後相容，現有欄位不移除）：
+
+- 館藏匯入回傳新增：
+  - `match_rerun`：布林值，表示是否執行了自動比對
+  - `affected_projects`：有 vendor_books 且執行過 run_match 的 project_id 清單
+  - `match_stats_by_project`：`{ project_id: stats }` 各 project 的比對結果
+  - `match_rerun_error`：（僅在 run_match 失敗時）錯誤訊息字串
+- 書商書單匯入（confirm_import / import_vendor_books）回傳新增：
+  - `match_stats`：本次 project 的比對結果（`run_match` 回傳的 stats dict）
+  - `match_rerun_error`：（僅在 run_match 失敗時）錯誤訊息字串
+
+前端顯示：
+
+- 館藏匯入成功後，若 `affected_projects` 非空，顯示「已重新執行比對（N 個書單專案）」
+- 書商書單匯入成功後，若有 `match_stats`，顯示可採購 / 已館藏數量
+- 若有 `match_rerun_error`，顯示提醒：匯入成功，但自動比對失敗，可到比對頁手動重新比對
+
 ## 不做的事
 
-- 不修改書商書單（`vendor_books`）的匯入邏輯
 - 不新增資料庫 schema（不需 migration，不新增 UNIQUE constraint 或新欄位）
 - 不為館藏匯入增加多步驟 wizard 流程（維持現有單步上傳 UI）
 - 不變更 `POST /api/imports/holdings` 的輸入參數格式
-- 不修改 `book_matches` 的比對邏輯或其他比對相關服務
+- 不修改 `run_match` 的比對邏輯
 - 不調整 `column_overrides` 參數的行為語意（維持現有邏輯）
+- 不修改 selection_items snapshot 邏輯與 export 邏輯
 
 ## 驗收條件
 
@@ -65,3 +93,6 @@
 6. 若上傳的 Excel 所有 sheet 均被略過，或有效匯入筆數為 0，API 回傳 HTTP 400 錯誤且 `library_holdings` 維持匯入前的狀態（rollback，不清空舊館藏）。
 7. 匯入完成後可正常執行館藏查詢與書單比對，`book_matches` 可重新產生，無 FK 違反或殘留舊 match 問題。
 8. 前端匯入完成訊息顯示「已覆蓋既有館藏」，多 sheet 情況下顯示各 sheet 筆數；有略過 sheet 時顯示略過名稱。
+9. 館藏匯入後，若已有書商書單，第一次打開 match.html 即顯示可採購 / 已館藏數量（不需手動按「重新比對」）。
+10. 書商書單匯入後，第一次打開 match.html 即顯示可採購 / 已館藏數量。
+11. 若 `run_match` 失敗，匯入本身仍成功回傳，前端顯示比對失敗提示。
