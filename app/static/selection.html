@@ -54,8 +54,6 @@
       <option value="">全部</option>
       <option value="available">可採購</option>
       <option value="already_owned">已館藏</option>
-      <option value="missing_isbn">ISBN 缺失</option>
-      <option value="invalid_isbn">ISBN 無效</option>
     </select>
     <label>完整度：</label>
     <select id="filter-comp" onchange="applyFilter()">
@@ -64,7 +62,7 @@
       <option value="needs_review">需補資料</option>
       <option value="missing_required">缺必填</option>
     </select>
-    <label>類型：</label>
+    <label id="label-book-type">類型：</label>
     <select id="filter-book-type" onchange="applyFilter()"><option value="">全部</option></select>
     <label>年齡：</label>
     <select id="filter-age" onchange="applyFilter()"><option value="">全部</option></select>
@@ -147,6 +145,13 @@ function populateDynamicSelects() {
   };
   populate('filter-book-type', allBooks.map(b => b.book_type));
   populate('filter-age', allBooks.map(b => b.age_range));
+
+  const hasBookType = document.getElementById('filter-book-type').options.length > 1;
+  document.getElementById('label-book-type').style.display = hasBookType ? '' : 'none';
+  document.getElementById('filter-book-type').style.display = hasBookType ? '' : 'none';
+
+  const hasCategoryData = allBooks.some(b => (b.category || '').trim() || (b.policy_topic || '').trim());
+  document.getElementById('filter-category').style.display = hasCategoryData ? '' : 'none';
 }
 
 function getEffectiveMatchStatus(b) {
