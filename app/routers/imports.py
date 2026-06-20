@@ -10,6 +10,8 @@ from app.services.import_service import (
     import_vendor_books,
     preview_excel,
     confirm_import,
+    clear_library_holdings,
+    clear_vendor_books,
 )
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
@@ -113,6 +115,26 @@ async def upload_vendor_books(
     content = await file.read()
     try:
         result = import_vendor_books(content, file.filename, project_id, user_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.delete("/holdings")
+async def delete_holdings(user_id: int = Depends(require_auth)):
+    try:
+        result = clear_library_holdings(user_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.delete("/vendor-books")
+async def delete_vendor_books(project_id: int, user_id: int = Depends(require_auth)):
+    try:
+        result = clear_vendor_books(project_id, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result

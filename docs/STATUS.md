@@ -1,10 +1,10 @@
 ---
-session_state: closed
-current_action: task-planning
-current_task: ""
-planning_task: task-clear-imported-source-data
-planning_type: fix
-planning_base_branch: main
+session_state: open
+current_action: executing
+current_task: task-clear-imported-source-data
+planning_task: ""
+planning_type: ""
+planning_base_branch: ""
 last_agent: claude
 updated: 2026-06-20
 ---
@@ -12,6 +12,13 @@ updated: 2026-06-20
 # Project Status
 
 ## Active Tasks
+
+- id: task-clear-imported-source-data
+  status: active
+  branch: fix/task-clear-imported-source-data
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-selection-record-snapshot
   status: done

@@ -57,6 +57,11 @@
       <input type="file" id="holdings-file" accept=".xls,.xlsx" onchange="uploadHoldings(this.files[0])">
     </div>
     <div id="holdings-result" style="margin-top:16px"></div>
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid #ffd2d2">
+      <p style="font-size:13px;color:#6e6e73;margin:0 0 8px">危險操作：清除後館藏比對結果失效，需重新匯入並重新執行比對。</p>
+      <button class="btn" style="background:#dc3545;color:#fff;border:none;cursor:pointer" onclick="clearHoldings()">清除學校館藏</button>
+      <div id="holdings-clear-result" style="margin-top:12px"></div>
+    </div>
   </div>
 
   <!-- 書商書單 wizard -->
@@ -152,6 +157,11 @@
         <button class="btn btn-secondary" onclick="goToStep('D')">← 上一步</button>
         <button class="btn btn-primary" id="confirm-btn" onclick="doConfirmImport()">確認匯入</button>
       </div>
+    </div>
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid #ffd2d2">
+      <p style="font-size:13px;color:#6e6e73;margin:0 0 8px">危險操作：僅清除書商書單來源資料，已選書紀錄不受影響。</p>
+      <button class="btn" style="background:#dc3545;color:#fff;border:none;cursor:pointer" onclick="clearVendorBooks()">清除目前專案書商書單</button>
+      <div id="vendor-clear-result" style="margin-top:12px"></div>
     </div>
   </div>
 
@@ -445,6 +455,40 @@ async function loadHistory() {
         <td>${new Date(b.imported_at).toLocaleString('zh-TW')}</td>
       </tr>`).join('')}
     </tbody></table></div>`;
+}
+
+async function clearHoldings() {
+  if (!confirm('確定要清除所有學校館藏資料？此操作無法復原。')) return;
+  const input = prompt('請輸入「清除」以確認：');
+  if (input !== '清除') return;
+  const el = document.getElementById('holdings-clear-result');
+  el.innerHTML = '<span style="color:#6e6e73">清除中...</span>';
+  try {
+    const result = await api('/api/imports/holdings', { method: 'DELETE' });
+    el.innerHTML = `<div class="alert alert-success">已清除：館藏 ${result.deleted_holdings} 筆、比對紀錄 ${result.deleted_matches} 筆、匯入批次 ${result.deleted_batches} 筆。</div>`;
+    loadHistory();
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error">清除失敗：${e.message || e}</div>`;
+  }
+}
+
+async function clearVendorBooks() {
+  if (!pid) {
+    document.getElementById('vendor-clear-result').innerHTML = '<div class="alert alert-warn">請先選擇採購專案。</div>';
+    return;
+  }
+  if (!confirm('確定要清除目前專案的書商書單來源資料？此操作無法復原。已選書紀錄將保留。')) return;
+  const input = prompt('請輸入「清除」以確認：');
+  if (input !== '清除') return;
+  const el = document.getElementById('vendor-clear-result');
+  el.innerHTML = '<span style="color:#6e6e73">清除中...</span>';
+  try {
+    const result = await api(`/api/imports/vendor-books?project_id=${pid}`, { method: 'DELETE' });
+    el.innerHTML = `<div class="alert alert-success">已清除：書商書單 ${result.deleted_vendor_books} 筆、比對紀錄 ${result.deleted_matches} 筆、匯入批次 ${result.deleted_batches} 筆。已選書紀錄保留 ${result.preserved_selection_items} 筆。</div>`;
+    loadHistory();
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error">清除失敗：${e.message || e}</div>`;
+  }
 }
 </script>
 </body>

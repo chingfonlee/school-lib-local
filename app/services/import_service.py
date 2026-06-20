@@ -589,6 +589,25 @@ def _build_formula_fallback(
         return {}
 
 
+def _clear_library_holdings(conn) -> None:
+    """
+    Remove all library_holdings source data.
+    Deletion order: book_matches (holding refs) → library_holdings → import_batches.
+    Does NOT commit — caller owns the transaction.
+    """
+    conn.execute("DELETE FROM book_matches WHERE holding_id IS NOT NULL")
+    conn.execute("DELETE FROM library_holdings")
+    batch_ids = [
+        r[0]
+        for r in conn.execute(
+            "SELECT id FROM import_batches WHERE batch_type='library_holdings'"
+        ).fetchall()
+    ]
+    if batch_ids:
+        ph = ",".join("?" * len(batch_ids))
+        conn.execute(f"DELETE FROM import_batches WHERE id IN ({ph})", batch_ids)
+
+
 def _clear_vendor_books_for_project(conn, project_id: int) -> None:
     """
     Remove vendor_books-related source data for a project before re-import.
@@ -621,3 +640,80 @@ def _clear_vendor_books_for_project(conn, project_id: int) -> None:
         f"DELETE FROM import_batches WHERE id IN ({ph})",
         old_batch_ids,
     )
+
+
+def clear_library_holdings(user_id: int) -> dict:
+    conn = get_connection()
+    try:
+        holdings_count = conn.execute("SELECT COUNT(*) FROM library_holdings").fetchone()[0]
+        matches_count = conn.execute(
+            "SELECT COUNT(*) FROM book_matches WHERE holding_id IS NOT NULL"
+        ).fetchone()[0]
+        batches_count = conn.execute(
+            "SELECT COUNT(*) FROM import_batches WHERE batch_type='library_holdings'"
+        ).fetchone()[0]
+        _clear_library_holdings(conn)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {
+        "deleted_holdings": holdings_count,
+        "deleted_matches": matches_count,
+        "deleted_batches": batches_count,
+    }
+
+
+def clear_vendor_books(project_id: int, user_id: int) -> dict:
+    conn = get_connection()
+    try:
+        project = conn.execute(
+            "SELECT id FROM procurement_projects WHERE id=?", (project_id,)
+        ).fetchone()
+        if project is None:
+            raise ValueError(f"project_id {project_id} 不存在")
+
+        old_batch_ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT id FROM import_batches WHERE project_id=? AND batch_type='vendor_books'",
+                (project_id,),
+            ).fetchall()
+        ]
+
+        if old_batch_ids:
+            ph = ",".join("?" * len(old_batch_ids))
+            vendor_books_count = conn.execute(
+                f"SELECT COUNT(*) FROM vendor_books WHERE batch_id IN ({ph})",
+                old_batch_ids,
+            ).fetchone()[0]
+            matches_count = conn.execute(
+                f"SELECT COUNT(*) FROM book_matches WHERE vendor_book_id IN "
+                f"(SELECT id FROM vendor_books WHERE batch_id IN ({ph}))",
+                old_batch_ids,
+            ).fetchone()[0]
+        else:
+            vendor_books_count = 0
+            matches_count = 0
+
+        batches_count = len(old_batch_ids)
+        preserved_count = conn.execute(
+            "SELECT COUNT(*) FROM selection_items WHERE project_id=?", (project_id,)
+        ).fetchone()[0]
+
+        _clear_vendor_books_for_project(conn, project_id)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {
+        "project_id": project_id,
+        "deleted_vendor_books": vendor_books_count,
+        "deleted_matches": matches_count,
+        "deleted_batches": batches_count,
+        "preserved_selection_items": preserved_count,
+    }
