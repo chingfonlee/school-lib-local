@@ -5,13 +5,20 @@ current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
-last_agent: claude
-updated: 2026-06-20
+last_agent: codex
+updated: 2026-06-21
 ---
 
 # Project Status
 
 ## Active Tasks
+
+- id: task-selection-advanced-filters
+  status: done
+  branch: ""
+  base_branch: main
+  last_log: 2026-06-21-001513.md
+  last_agent: codex
 
 - id: task-cleared-source-selection-display
   status: done
