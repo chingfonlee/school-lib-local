@@ -1,10 +1,10 @@
 ---
 session_state: open
-current_action: executing
-current_task: task-selection-record-snapshot
-planning_task: ""
-planning_type: ""
-planning_base_branch: ""
+current_action: task-planning
+current_task: ""
+planning_task: task-clear-imported-source-data
+planning_type: fix
+planning_base_branch: main
 last_agent: claude
 updated: 2026-06-20
 ---
