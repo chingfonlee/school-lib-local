@@ -1,7 +1,7 @@
 ---
-session_state: open
-current_action: task-close
-current_task: task-clear-imported-source-data
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -14,11 +14,11 @@ updated: 2026-06-20
 ## Active Tasks
 
 - id: task-clear-imported-source-data
-  status: active
-  branch: fix/task-clear-imported-source-data
+  status: done
+  branch: ""
   base_branch: main
-  last_log: ""
-  last_agent: ""
+  last_log: 2026-06-20-163201.md
+  last_agent: claude
 
 - id: task-selection-record-snapshot
   status: done
