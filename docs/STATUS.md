@@ -1,7 +1,7 @@
 ---
-session_state: open
-current_action: task-close
-current_task: task-library-holdings-reimport-multisheet
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -35,10 +35,10 @@ updated: 2026-06-20
   last_agent: claude
 
 - id: task-library-holdings-reimport-multisheet
-  status: active
-  branch: fix/task-library-holdings-reimport-multisheet
+  status: done
+  branch: ""
   base_branch: main
-  last_log: 2026-06-20-202408.md
+  last_log: 2026-06-20-224449.md
   last_agent: claude
 
 - id: task-reimport-replace-vendor-books
