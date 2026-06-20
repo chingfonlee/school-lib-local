@@ -275,16 +275,9 @@ function render(books) {
     const holdingsUrl = b.isbn_normalized
       ? `/holdings.html?isbn=${encodeURIComponent(b.isbn_normalized)}`
       : `/holdings.html?q=${encodeURIComponent(b.title || '')}`;
-    const extra = b.extra_fields ? (() => { try { return JSON.parse(b.extra_fields); } catch(e) { return null; } })() : null;
-    const hasExtra = extra && Object.keys(extra).length > 0;
     const ctaBtn = qty > 0
       ? `<button class="book-cta" id="cta-${b.id}" disabled>已加入</button>`
       : `<button class="book-cta" id="cta-${b.id}" onclick="addBook(${b.id})">＋ 加入選書</button>`;
-    const extraSection = hasExtra
-      ? `<div id="extra-${b.id}" style="display:none;padding:8px 16px;font-size:12px;color:#444;background:#f5f5f7">
-           ${Object.entries(extra).map(([k,v]) => `<span style="margin-right:12px"><span style="color:#6e6e73">${k}：</span>${v}</span>`).join('')}
-         </div>`
-      : '';
     return `
     <div class="book-card">
       <div class="book-card-body">
@@ -302,7 +295,6 @@ function render(books) {
         <div class="book-card-links">
           <a href="#" onclick="toggleEdit(${b.id}); return false;">修正資料</a>
           <a href="${holdingsUrl}" target="_blank" rel="noopener">查館藏</a>
-          ${hasExtra ? `<a href="#" onclick="toggleExtra(${b.id}); return false;">書商資訊</a>` : ''}
         </div>
         ${ctaBtn}
       </div>
@@ -318,7 +310,6 @@ function render(books) {
           <button class="btn btn-secondary btn-sm" onclick="toggleEdit(${b.id})">取消</button>
         </div>
       </div>
-      ${extraSection}
     </div>`;
   }).join('');
 }
@@ -356,10 +347,6 @@ function toggleEdit(id) {
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
-function toggleExtra(id) {
-  const row = document.getElementById('extra-' + id);
-  if (row) row.style.display = row.style.display === 'none' ? 'block' : 'none';
-}
 
 async function saveOverrides(bookId) {
   const inputs = document.querySelectorAll(`[data-bookid="${bookId}"]`);
