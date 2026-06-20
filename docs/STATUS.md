@@ -1,5 +1,5 @@
 ---
-session_state: open
+session_state: closed
 current_action: task-planning
 current_task: ""
 planning_task: task-clear-imported-source-data
@@ -14,11 +14,11 @@ updated: 2026-06-20
 ## Active Tasks
 
 - id: task-selection-record-snapshot
-  status: active
-  branch: fix/task-selection-record-snapshot
+  status: done
+  branch: ""
   base_branch: main
-  last_log: ""
-  last_agent: ""
+  last_log: 2026-06-20-160323.md
+  last_agent: claude
 
 - id: task-library-holdings-reimport-multisheet
   status: paused
