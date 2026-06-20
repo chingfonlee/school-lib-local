@@ -48,15 +48,40 @@
     </div>
   </div>
 
-  <div class="filter-bar">
-    <label>完整度篩選：</label>
+  <div class="filter-bar" style="flex-wrap:wrap;gap:6px 8px">
+    <label>比對狀態：</label>
+    <select id="filter-match" onchange="applyFilter()">
+      <option value="">全部</option>
+      <option value="available">可採購</option>
+      <option value="already_owned">已館藏</option>
+      <option value="missing_isbn">ISBN 缺失</option>
+      <option value="invalid_isbn">ISBN 無效</option>
+    </select>
+    <label>完整度：</label>
     <select id="filter-comp" onchange="applyFilter()">
       <option value="">全部</option>
       <option value="export_ready">可匯出</option>
       <option value="needs_review">需補資料</option>
       <option value="missing_required">缺必填</option>
     </select>
-    <input type="text" id="filter-text" placeholder="搜尋書名..." oninput="applyFilter()" style="width:200px">
+    <label>類型：</label>
+    <select id="filter-book-type" onchange="applyFilter()"><option value="">全部</option></select>
+    <label>年齡：</label>
+    <select id="filter-age" onchange="applyFilter()"><option value="">全部</option></select>
+    <input type="text" id="filter-category" placeholder="分類/議題..." oninput="applyFilter()" style="width:120px">
+    <input type="number" id="filter-min-price" placeholder="最低價" oninput="applyFilter()" style="width:72px">
+    <span style="color:#aaa">~</span>
+    <input type="number" id="filter-max-price" placeholder="最高價" oninput="applyFilter()" style="width:72px">
+    <input type="text" id="filter-text" placeholder="關鍵字搜尋..." oninput="applyFilter()" style="width:160px">
+    <select id="filter-sort" onchange="applyFilter()">
+      <option value="id">匯入順序</option>
+      <option value="available_first">可採購優先</option>
+      <option value="completeness_first">完整度優先</option>
+      <option value="price_asc">價格低→高</option>
+      <option value="price_desc">價格高→低</option>
+      <option value="title">書名</option>
+    </select>
+    <button class="btn btn-secondary btn-sm" onclick="resetFilters()">重設篩選</button>
     <span id="result-count" style="font-size:13px;color:#666"></span>
   </div>
 
@@ -93,7 +118,7 @@ requireAuth().then(async () => {
 
 async function loadData() {
   const [books, selData] = await Promise.all([
-    api(`/api/books/matches?project_id=${pid}&match_status=available`),
+    api(`/api/books/matches?project_id=${pid}`),
     api(`/api/selections/?project_id=${pid}`)
   ]);
   allBooks = books;
@@ -103,25 +128,134 @@ async function loadData() {
   document.getElementById('budget-count').textContent = summary.count;
   document.getElementById('budget-list').textContent = 'NT$ ' + formatCurrency(summary.total_list_price);
   document.getElementById('budget-purchase').textContent = 'NT$ ' + formatCurrency(summary.total_purchase_price);
+  populateDynamicSelects();
   applyFilter();
   const clearedItems = selData.items.filter(s => !s.vendor_book_still_exists);
   renderClearedItems(clearedItems);
 }
 
+function populateDynamicSelects() {
+  const populate = (id, values) => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">全部</option>' +
+      [...new Set(values.filter(Boolean).map(v => String(v).trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, 'zh-TW'))
+        .map(v => `<option value="${v.replace(/"/g, '&quot;')}">${v}</option>`)
+        .join('');
+    if (cur) sel.value = cur;
+  };
+  populate('filter-book-type', allBooks.map(b => b.book_type));
+  populate('filter-age', allBooks.map(b => b.age_range));
+}
+
+function getEffectiveMatchStatus(b) {
+  return b.match_status || b.current_match_status || 'unknown';
+}
+
+function getEffectivePrice(b) {
+  const pp = parseFloat(b.purchase_price);
+  if (!isNaN(pp) && pp > 0) return pp;
+  const lp = parseFloat(b.list_price);
+  return isNaN(lp) ? null : lp;
+}
+
+function normalizeText(v) {
+  return v ? String(v).toLowerCase() : '';
+}
+
+function includesKeyword(b, kw) {
+  const k = normalizeText(kw);
+  return [b.title, b.author, b.isbn, b.isbn_normalized, b.publisher,
+          b.summary, b.category, b.book_type, b.policy_topic]
+    .some(v => normalizeText(v).includes(k));
+}
+
+const COMPLETENESS_ORDER = { export_ready: 0, needs_review: 1, missing_required: 2, unknown: 3 };
+const MATCH_ORDER = { available: 0, already_owned: 1, missing_isbn: 2, invalid_isbn: 3, unknown: 4 };
+
+function compareBooks(a, b, sortMode) {
+  switch (sortMode) {
+    case 'available_first': {
+      const da = MATCH_ORDER[getEffectiveMatchStatus(a)] ?? 5;
+      const db = MATCH_ORDER[getEffectiveMatchStatus(b)] ?? 5;
+      return da !== db ? da - db : a.id - b.id;
+    }
+    case 'completeness_first': {
+      const da = COMPLETENESS_ORDER[a.completeness_status] ?? 4;
+      const db = COMPLETENESS_ORDER[b.completeness_status] ?? 4;
+      return da !== db ? da - db : a.id - b.id;
+    }
+    case 'price_asc': {
+      const pa = getEffectivePrice(a), pb = getEffectivePrice(b);
+      if (pa === null && pb === null) return a.id - b.id;
+      if (pa === null) return 1;
+      if (pb === null) return -1;
+      return pa !== pb ? pa - pb : a.id - b.id;
+    }
+    case 'price_desc': {
+      const pa = getEffectivePrice(a), pb = getEffectivePrice(b);
+      if (pa === null && pb === null) return a.id - b.id;
+      if (pa === null) return 1;
+      if (pb === null) return -1;
+      return pa !== pb ? pb - pa : a.id - b.id;
+    }
+    case 'title':
+      return (a.title || '').localeCompare(b.title || '', 'zh-TW');
+    default:
+      return a.id - b.id;
+  }
+}
+
 function applyFilter() {
+  const matchVal = document.getElementById('filter-match').value;
   const comp = document.getElementById('filter-comp').value;
-  const text = document.getElementById('filter-text').value.toLowerCase();
+  const bookType = document.getElementById('filter-book-type').value;
+  const ageRange = document.getElementById('filter-age').value;
+  const category = document.getElementById('filter-category').value.trim();
+  const minPrice = document.getElementById('filter-min-price').value;
+  const maxPrice = document.getElementById('filter-max-price').value;
+  const text = document.getElementById('filter-text').value.trim();
+  const sortMode = document.getElementById('filter-sort').value;
+
   let filtered = allBooks;
+  if (matchVal) filtered = filtered.filter(b => getEffectiveMatchStatus(b) === matchVal);
   if (comp) filtered = filtered.filter(b => b.completeness_status === comp);
-  if (text) filtered = filtered.filter(b => (b.title || '').toLowerCase().includes(text));
+  if (bookType) filtered = filtered.filter(b => (b.book_type || '') === bookType);
+  if (ageRange) filtered = filtered.filter(b => (b.age_range || '') === ageRange);
+  if (category) {
+    const kc = normalizeText(category);
+    filtered = filtered.filter(b =>
+      normalizeText(b.category).includes(kc) || normalizeText(b.policy_topic).includes(kc)
+    );
+  }
+  if (minPrice !== '') {
+    const min = parseFloat(minPrice);
+    if (!isNaN(min)) filtered = filtered.filter(b => { const p = getEffectivePrice(b); return p !== null && p >= min; });
+  }
+  if (maxPrice !== '') {
+    const max = parseFloat(maxPrice);
+    if (!isNaN(max)) filtered = filtered.filter(b => { const p = getEffectivePrice(b); return p !== null && p <= max; });
+  }
+  if (text) filtered = filtered.filter(b => includesKeyword(b, text));
+
+  filtered = [...filtered].sort((a, b) => compareBooks(a, b, sortMode));
   document.getElementById('result-count').textContent = `共 ${filtered.length} 筆`;
   render(filtered);
+}
+
+function resetFilters() {
+  ['filter-match', 'filter-comp', 'filter-book-type', 'filter-age', 'filter-sort']
+    .forEach(id => { const s = document.getElementById(id); s.value = s.options[0].value; });
+  ['filter-category', 'filter-min-price', 'filter-max-price', 'filter-text']
+    .forEach(id => { document.getElementById(id).value = ''; });
+  applyFilter();
 }
 
 function render(books) {
   const grid = document.getElementById('book-grid');
   if (!books.length) {
-    grid.innerHTML = '<div style="text-align:center;color:#999;padding:60px 0">無資料</div>';
+    grid.innerHTML = '<div style="text-align:center;color:#999;padding:60px 0">無符合條件的書目</div>';
     return;
   }
   grid.innerHTML = books.map(b => {

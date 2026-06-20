@@ -18,7 +18,7 @@ async def get_matches(
     user_id: int = Depends(require_auth),
 ):
     conn = get_connection()
-    where_clauses = ["ib.project_id = ?", "vb.isbn_status = 'valid'"]
+    where_clauses = ["ib.project_id = ?"]
     params = [project_id]
 
     if match_status:
