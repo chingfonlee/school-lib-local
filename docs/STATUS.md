@@ -1,7 +1,7 @@
 ---
-session_state: open
-current_action: executing
-current_task: task-cleared-source-selection-display
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -14,11 +14,11 @@ updated: 2026-06-20
 ## Active Tasks
 
 - id: task-cleared-source-selection-display
-  status: active
-  branch: fix/task-cleared-source-selection-display
+  status: done
+  branch: ""
   base_branch: main
-  last_log: ""
-  last_agent: ""
+  last_log: 2026-06-20-192822.md
+  last_agent: codex
 
 - id: task-clear-imported-source-data
   status: done
