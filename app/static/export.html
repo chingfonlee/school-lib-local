@@ -108,7 +108,11 @@ async function loadPreview() {
   const sel = await api(`/api/selections/?project_id=${pid}`);
   const tbody = document.getElementById('preview-body');
 
-  const items = sel.items.filter(b => b.selected_quantity > 0);
+  const items = sel.items.filter(b => {
+    if (!b.selected_quantity) return false;
+    const effectiveStatus = b.current_match_status || b.match_status_at_selection || 'available';
+    return effectiveStatus !== 'already_owned';
+  });
   const hasCleared = sel.items.some(b => !b.vendor_book_still_exists);
   document.getElementById('preview-source-note').style.display = hasCleared ? 'block' : 'none';
   if (!items.length) {
