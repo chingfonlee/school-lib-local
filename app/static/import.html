@@ -187,7 +187,11 @@ const SYSTEM_FIELDS = [
   {key:'award_item',    label:'獲獎項目', required:false},
   {key:'vendor_seq',    label:'序號',     required:false},
   {key:'publish_date',  label:'出版日期', required:false},
-  {key:'age_range',     label:'適合年齡', required:false},
+  {key:'age_range',            label:'適合年齡',    required:false},
+  {key:'category',             label:'分類',        required:false},
+  {key:'book_type',            label:'類型',        required:false},
+  {key:'policy_topic',         label:'議題',        required:false},
+  {key:'classification_number',label:'CIP / 分類號', required:false},
 ];
 
 requireAuth().then(async () => {
