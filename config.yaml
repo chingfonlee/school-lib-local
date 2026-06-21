@@ -38,6 +38,28 @@ export_templates:
       subtotal: "H"
       award_item: "I"
       notes: "J"
+  - name: "general_books_kaohsiung_115"
+    project_type: "general_books"
+    template_file_path: "./00_source/高雄市115年度○○區○○國小圖書館（室）圖書採購書單(空白).xlsx"
+    sheet_name: "正式書單"
+    header_row: 4
+    data_start_row: 6
+    max_rows: 50
+    school_name_cell: ""
+    approved_budget_cell: ""
+    column_mappings:
+      eligibility_label: "A"
+      sort_order: "B"
+      title: "C"
+      author: "D"
+      publisher: "E"
+      isbn: "F"
+      quantity: "G"
+      recommendation_source: "H"
+      policy_topic: "I"
+      price: "J"
+      subtotal: "K"
+      award_notes: "L"
 
 default_project:
   name: "115年度本土文化採購"

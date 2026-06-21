@@ -29,11 +29,11 @@
   <div class="card">
     <h2>匯出設定</h2>
     <div class="form-row">
-      <div class="form-group">
+      <div class="form-group" id="school-name-group">
         <label>學校名稱 <span style="color:#c0392b">*</span></label>
         <input type="text" id="school-name" placeholder="例：○○國小">
       </div>
-      <div class="form-group">
+      <div class="form-group" id="budget-group">
         <label>核定金額（選填）</label>
         <input type="number" id="budget" placeholder="例：45000">
       </div>
@@ -68,7 +68,7 @@
       <table>
         <thead><tr>
           <th>#</th><th>書名</th><th>作者</th><th>ISBN</th><th>定價</th><th>單價</th>
-          <th>數量</th><th>獲獎項目</th><th>完整度</th>
+          <th>數量</th><th id="award-col-header">獲獎項目</th><th>完整度</th>
         </tr></thead>
         <tbody id="preview-body"></tbody>
       </table>
@@ -84,6 +84,7 @@
 <script src="/js/common.js"></script>
 <script>
 let pid = null;
+let projectType = null;
 
 requireAuth().then(async () => {
   pid = getProjectId();
@@ -99,6 +100,12 @@ requireAuth().then(async () => {
   document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
   document.getElementById('price-field').value = proj.price_field;
   document.getElementById('subtotal-mode').value = proj.subtotal_mode;
+  projectType = proj.project_type;
+  if (projectType === 'general_books') {
+    document.getElementById('school-name-group').style.display = 'none';
+    document.getElementById('budget-group').style.display = 'none';
+    document.getElementById('award-col-header').textContent = 'H欄推薦來源';
+  }
   await Promise.all([loadPreview(), loadJobs()]);
 });
 
@@ -129,7 +136,7 @@ async function loadPreview() {
       <td>${b.list_price ? formatCurrency(b.list_price) : '—'}</td>
       <td>${b.purchase_price ? formatCurrency(b.purchase_price) : '—'}</td>
       <td>${b.selected_quantity}</td>
-      <td style="font-size:12px;max-width:140px;white-space:normal">${ov.award_item||b.award_item||'—'}</td>
+      <td style="font-size:12px;max-width:140px;white-space:normal">${projectType === 'general_books' ? (ov.recommendation_source||b.recommendation_source||'—') : (ov.award_item||b.award_item||'—')}</td>
       <td>${badge(b.completeness_status||'unknown')}</td>
     </tr>`;
   }).join('');
@@ -162,7 +169,7 @@ async function loadJobs() {
 
 async function doExport() {
   const school = document.getElementById('school-name').value.trim();
-  if (!school) { showToast('請填入學校名稱'); return; }
+  if (projectType !== 'general_books' && !school) { showToast('請填入學校名稱'); return; }
   const budget = document.getElementById('budget').value;
   const btn = document.getElementById('export-btn');
   const status = document.getElementById('export-status');

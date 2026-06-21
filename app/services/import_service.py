@@ -41,6 +41,7 @@ VENDOR_COLUMN_HINTS = {
     "eligibility_label": ["eligible_label", "資格標籤", "必選推薦", "eligibility_label"],
     "policy_topic": ["topic", "議題", "policy_topic"],
     "classification_number": ["CIP", "分類號", "圖書分類號", "類號"],
+    "award_notes": ["award_notes", "備註", "notes"],
 }
 
 

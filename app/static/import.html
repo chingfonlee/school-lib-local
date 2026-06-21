@@ -191,7 +191,10 @@ const SYSTEM_FIELDS = [
   {key:'category',             label:'分類',        required:false},
   {key:'book_type',            label:'類型',        required:false},
   {key:'policy_topic',         label:'議題',        required:false},
-  {key:'classification_number',label:'CIP / 分類號', required:false},
+  {key:'classification_number',  label:'CIP / 分類號',    required:false},
+  {key:'eligibility_label',      label:'必選/推薦（A欄）', required:false},
+  {key:'recommendation_source',  label:'H欄獲獎代碼',      required:false},
+  {key:'award_notes',            label:'備註（L欄）',      required:false},
 ];
 
 requireAuth().then(async () => {

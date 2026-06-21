@@ -6,7 +6,7 @@ from app.auth import require_auth
 from app.config import get_config
 from app.database import get_connection
 from app.services.validation_service import check_export_readiness
-from app.services.export_service import ExportSettings, export_local_culture
+from app.services.export_service import ExportSettings, export_local_culture, export_general_books
 
 router = APIRouter(prefix="/api/exports", tags=["exports"])
 
@@ -24,7 +24,7 @@ async def export_check(
 
 class ExportRequest(BaseModel):
     project_id: int
-    school_name: str
+    school_name: str = ""
     approved_budget: float | None = None
     price_field: str = "purchase_price"
     subtotal_mode: str = "quantity_times_purchase_price"
@@ -33,6 +33,14 @@ class ExportRequest(BaseModel):
 @router.post("/local-culture")
 async def do_export(body: ExportRequest, user_id: int = Depends(require_auth)):
     cfg = get_config()
+    conn = get_connection()
+    project = conn.execute(
+        "SELECT project_type FROM procurement_projects WHERE id = ?",
+        (body.project_id,),
+    ).fetchone()
+    conn.close()
+    if project is None:
+        raise HTTPException(status_code=404, detail="採購專案不存在")
     settings = ExportSettings(
         project_id=body.project_id,
         school_name=body.school_name,
@@ -43,7 +51,10 @@ async def do_export(body: ExportRequest, user_id: int = Depends(require_auth)):
         exported_by=user_id,
     )
     try:
-        job_id = export_local_culture(settings)
+        if project["project_type"] == "general_books":
+            job_id = export_general_books(settings)
+        else:
+            job_id = export_local_culture(settings)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"job_id": job_id}
