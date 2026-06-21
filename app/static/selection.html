@@ -66,7 +66,10 @@
     <select id="filter-book-type" onchange="applyFilter()"><option value="">全部</option></select>
     <label>年齡：</label>
     <select id="filter-age" onchange="applyFilter()"><option value="">全部</option></select>
-    <input type="text" id="filter-category" placeholder="分類/議題..." oninput="applyFilter()" style="width:120px">
+    <label id="label-category" style="display:none">分類：</label>
+    <select id="filter-category" onchange="applyFilter()" style="display:none"><option value="">全部</option></select>
+    <label id="label-policy-topic" style="display:none">議題：</label>
+    <select id="filter-policy-topic" onchange="applyFilter()" style="display:none"><option value="">全部</option></select>
     <input type="number" id="filter-min-price" placeholder="最低價" oninput="applyFilter()" style="width:72px">
     <span style="color:#aaa">~</span>
     <input type="number" id="filter-max-price" placeholder="最高價" oninput="applyFilter()" style="width:72px">
@@ -145,13 +148,20 @@ function populateDynamicSelects() {
   };
   populate('filter-book-type', allBooks.map(b => b.book_type));
   populate('filter-age', allBooks.map(b => b.age_range));
+  populate('filter-category', allBooks.map(b => b.category));
+  populate('filter-policy-topic', allBooks.map(b => b.policy_topic));
 
   const hasBookType = document.getElementById('filter-book-type').options.length > 1;
   document.getElementById('label-book-type').style.display = hasBookType ? '' : 'none';
   document.getElementById('filter-book-type').style.display = hasBookType ? '' : 'none';
 
-  const hasCategoryData = allBooks.some(b => (b.category || '').trim() || (b.policy_topic || '').trim());
-  document.getElementById('filter-category').style.display = hasCategoryData ? '' : 'none';
+  const hasCategory = document.getElementById('filter-category').options.length > 1;
+  document.getElementById('label-category').style.display = hasCategory ? '' : 'none';
+  document.getElementById('filter-category').style.display = hasCategory ? '' : 'none';
+
+  const hasTopic = document.getElementById('filter-policy-topic').options.length > 1;
+  document.getElementById('label-policy-topic').style.display = hasTopic ? '' : 'none';
+  document.getElementById('filter-policy-topic').style.display = hasTopic ? '' : 'none';
 }
 
 function getEffectiveMatchStatus(b) {
@@ -217,7 +227,8 @@ function applyFilter() {
   const comp = document.getElementById('filter-comp').value;
   const bookType = document.getElementById('filter-book-type').value;
   const ageRange = document.getElementById('filter-age').value;
-  const category = document.getElementById('filter-category').value.trim();
+  const category = document.getElementById('filter-category').value;
+  const policyTopic = document.getElementById('filter-policy-topic').value;
   const minPrice = document.getElementById('filter-min-price').value;
   const maxPrice = document.getElementById('filter-max-price').value;
   const text = document.getElementById('filter-text').value.trim();
@@ -228,12 +239,8 @@ function applyFilter() {
   if (comp) filtered = filtered.filter(b => b.completeness_status === comp);
   if (bookType) filtered = filtered.filter(b => (b.book_type || '') === bookType);
   if (ageRange) filtered = filtered.filter(b => (b.age_range || '') === ageRange);
-  if (category) {
-    const kc = normalizeText(category);
-    filtered = filtered.filter(b =>
-      normalizeText(b.category).includes(kc) || normalizeText(b.policy_topic).includes(kc)
-    );
-  }
+  if (category) filtered = filtered.filter(b => (b.category || '') === category);
+  if (policyTopic) filtered = filtered.filter(b => (b.policy_topic || '') === policyTopic);
   if (minPrice !== '') {
     const min = parseFloat(minPrice);
     if (!isNaN(min)) filtered = filtered.filter(b => { const p = getEffectivePrice(b); return p !== null && p >= min; });
@@ -250,9 +257,9 @@ function applyFilter() {
 }
 
 function resetFilters() {
-  ['filter-match', 'filter-comp', 'filter-book-type', 'filter-age', 'filter-sort']
+  ['filter-match', 'filter-comp', 'filter-book-type', 'filter-age', 'filter-category', 'filter-policy-topic', 'filter-sort']
     .forEach(id => { const s = document.getElementById(id); s.value = s.options[0].value; });
-  ['filter-category', 'filter-min-price', 'filter-max-price', 'filter-text']
+  ['filter-min-price', 'filter-max-price', 'filter-text']
     .forEach(id => { document.getElementById(id).value = ''; });
   applyFilter();
 }
