@@ -31,14 +31,14 @@
 
 ### 選書頁進階篩選
 
-- status: active
+- status: done
 - priority: medium
 - type: UX
 - task-id: task-selection-advanced-filters
 - description:
   增加比對狀態、資料完整度、書本類型、適讀年齡、分類/議題、價格區間、關鍵字與排序。
 - decision:
-  已轉成正式 task，目前在 Active Tasks 中執行。
+  已轉成正式 task 並完成。
 
 ### 內網部署與使用補強
 
