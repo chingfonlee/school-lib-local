@@ -40,6 +40,26 @@
 - decision:
   已轉成正式 task，目前在 Active Tasks 中執行。
 
+### 內網部署與使用補強
+
+- status: idea
+- priority: low
+- type: deployment/ops
+- source: 使用者詢問系統若要在內網使用需要具備什麼
+- description:
+  規劃讓本系統可在學校或單位內網穩定使用。目標是讓一台固定內網 IP 的電腦或小型主機提供服務，其他老師與館員可用瀏覽器連線操作。
+- possible scope:
+  - 支援用 config.yaml 設定 host / port，內網啟動時可綁定 0.0.0.0。
+  - 補 Windows 防火牆與固定 IP 設定說明。
+  - 補 Windows 工作排程器或 NSSM service 啟動腳本。
+  - 補一鍵備份 data/、exports/、config.yaml 的方式。
+  - 補預設帳密與 session_secret_key 初始化/變更說明。
+  - 評估 SQLite 在多人內網使用下的限制與注意事項。
+- notes:
+  最小可行內網版是固定 IP 主機、開放 port、用 uvicorn 綁定 0.0.0.0。正式化前不急著做 HTTPS 或 reverse proxy；若未來跨校外或 VPN 使用，再評估 HTTPS。
+- decision:
+  可做可不做，暫不排入 Active Tasks。
+
 ## 查詢提示詞範例
 
 ```text
