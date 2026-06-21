@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>選書 — 圖書採購系統</title>
 <link rel="stylesheet" href="/css/style.css">
+<style>
+.filter-field { display: flex; align-items: center; gap: 8px; }
+</style>
 </head>
 <body>
 <nav>
@@ -49,30 +52,44 @@
   </div>
 
   <div class="filter-bar" style="flex-wrap:wrap;gap:6px 8px">
-    <label>比對狀態：</label>
-    <select id="filter-match" onchange="applyFilter()">
-      <option value="">全部</option>
-      <option value="available">可採購</option>
-      <option value="already_owned">已館藏</option>
-    </select>
-    <label>完整度：</label>
-    <select id="filter-comp" onchange="applyFilter()">
-      <option value="">全部</option>
-      <option value="export_ready">可匯出</option>
-      <option value="needs_review">需補資料</option>
-      <option value="missing_required">缺必填</option>
-    </select>
-    <label id="label-book-type">類型：</label>
-    <select id="filter-book-type" onchange="applyFilter()"><option value="">全部</option></select>
-    <label>年齡：</label>
-    <select id="filter-age" onchange="applyFilter()"><option value="">全部</option></select>
-    <label id="label-category" style="display:none">分類：</label>
-    <select id="filter-category" onchange="applyFilter()" style="display:none"><option value="">全部</option></select>
-    <label id="label-policy-topic" style="display:none">議題：</label>
-    <select id="filter-policy-topic" onchange="applyFilter()" style="display:none"><option value="">全部</option></select>
-    <input type="number" id="filter-min-price" placeholder="最低價" oninput="applyFilter()" style="width:72px">
-    <span style="color:#aaa">~</span>
-    <input type="number" id="filter-max-price" placeholder="最高價" oninput="applyFilter()" style="width:72px">
+    <div class="filter-field">
+      <label>比對狀態：</label>
+      <select id="filter-match" onchange="applyFilter()">
+        <option value="">全部</option>
+        <option value="available">可採購</option>
+        <option value="already_owned">已館藏</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>完整度：</label>
+      <select id="filter-comp" onchange="applyFilter()">
+        <option value="">全部</option>
+        <option value="export_ready">可匯出</option>
+        <option value="needs_review">需補資料</option>
+        <option value="missing_required">缺必填</option>
+      </select>
+    </div>
+    <div class="filter-field" id="field-book-type" style="display:none">
+      <label>類型：</label>
+      <select id="filter-book-type" onchange="applyFilter()"><option value="">全部</option></select>
+    </div>
+    <div class="filter-field">
+      <label>年齡：</label>
+      <select id="filter-age" onchange="applyFilter()"><option value="">全部</option></select>
+    </div>
+    <div class="filter-field" id="field-category" style="display:none">
+      <label>分類：</label>
+      <select id="filter-category" onchange="applyFilter()"><option value="">全部</option></select>
+    </div>
+    <div class="filter-field" id="field-policy-topic" style="display:none">
+      <label>議題：</label>
+      <select id="filter-policy-topic" onchange="applyFilter()"><option value="">全部</option></select>
+    </div>
+    <div class="filter-field">
+      <input type="number" id="filter-min-price" placeholder="最低價" oninput="applyFilter()" style="width:72px">
+      <span style="color:#aaa">~</span>
+      <input type="number" id="filter-max-price" placeholder="最高價" oninput="applyFilter()" style="width:72px">
+    </div>
     <input type="text" id="filter-text" placeholder="關鍵字搜尋..." oninput="applyFilter()" style="width:160px">
     <select id="filter-sort" onchange="applyFilter()">
       <option value="id">匯入順序</option>
@@ -151,17 +168,12 @@ function populateDynamicSelects() {
   populate('filter-category', allBooks.map(b => b.category));
   populate('filter-policy-topic', allBooks.map(b => b.policy_topic));
 
-  const hasBookType = document.getElementById('filter-book-type').options.length > 1;
-  document.getElementById('label-book-type').style.display = hasBookType ? '' : 'none';
-  document.getElementById('filter-book-type').style.display = hasBookType ? '' : 'none';
-
-  const hasCategory = document.getElementById('filter-category').options.length > 1;
-  document.getElementById('label-category').style.display = hasCategory ? '' : 'none';
-  document.getElementById('filter-category').style.display = hasCategory ? '' : 'none';
-
-  const hasTopic = document.getElementById('filter-policy-topic').options.length > 1;
-  document.getElementById('label-policy-topic').style.display = hasTopic ? '' : 'none';
-  document.getElementById('filter-policy-topic').style.display = hasTopic ? '' : 'none';
+  document.getElementById('field-book-type').style.display =
+    document.getElementById('filter-book-type').options.length > 1 ? '' : 'none';
+  document.getElementById('field-category').style.display =
+    document.getElementById('filter-category').options.length > 1 ? '' : 'none';
+  document.getElementById('field-policy-topic').style.display =
+    document.getElementById('filter-policy-topic').options.length > 1 ? '' : 'none';
 }
 
 function getEffectiveMatchStatus(b) {
