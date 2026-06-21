@@ -68,13 +68,14 @@ def upsert_selection(
             "award_item, vendor_seq, age_range, "
             "category, book_type, policy_topic, summary, "
             "source_url, recommendation_source, eligibility_label, award_notes, "
+            "classification_number, "
             "completeness_status, "
             "match_status_at_selection, holding_id_at_selection, "
             "user_overrides, extra_fields, raw_row, "
             "created_by, created_at, updated_at"
             ") VALUES ("
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
             ")",
             (
                 project_id,
@@ -104,6 +105,7 @@ def upsert_selection(
                 snap.get("recommendation_source"),
                 snap.get("eligibility_label"),
                 snap.get("award_notes"),
+                snap.get("classification_number"),
                 completeness,
                 snap.get("match_status"),
                 snap.get("holding_id"),

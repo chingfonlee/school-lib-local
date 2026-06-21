@@ -1,17 +1,24 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-vendor-classification-fields
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
-last_agent: codex
+last_agent: claude
 updated: 2026-06-21
 ---
 
 # Project Status
 
 ## Active Tasks
+
+- id: task-vendor-classification-fields
+  status: active
+  branch: fix/task-vendor-classification-fields
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-selection-advanced-filters
   status: done

@@ -39,6 +39,8 @@ VENDOR_COLUMN_HINTS = {
     "source_url": ["連結", "url", "link", "source_url"],
     "recommendation_source": ["award_template", "推薦來源", "recommendation_source"],
     "eligibility_label": ["eligible_label", "資格標籤", "必選推薦", "eligibility_label"],
+    "policy_topic": ["topic", "議題", "policy_topic"],
+    "classification_number": ["CIP", "分類號", "圖書分類號", "類號"],
 }
 
 
@@ -281,8 +283,9 @@ def confirm_import(
             "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
             "publish_date, list_price, purchase_price, publisher, age_range, "
             "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
-            "category, book_type, summary, source_url, recommendation_source, eligibility_label) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "category, book_type, policy_topic, summary, source_url, recommendation_source, "
+            "eligibility_label, classification_number) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 batch_id,
                 book["award_item"],
@@ -303,10 +306,12 @@ def confirm_import(
                 json.dumps(raw, ensure_ascii=False),
                 get_field("category"),
                 get_field("book_type"),
+                get_field("policy_topic"),
                 get_field("summary"),
                 get_field("source_url"),
                 get_field("recommendation_source"),
                 get_field("eligibility_label"),
+                get_field("classification_number"),
             ),
         )
         records_inserted += 1
@@ -493,8 +498,9 @@ def import_vendor_books(
             "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
             "publish_date, list_price, purchase_price, publisher, age_range, "
             "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
-            "category, book_type, summary, source_url, recommendation_source, eligibility_label) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "category, book_type, policy_topic, summary, source_url, recommendation_source, "
+            "eligibility_label, classification_number) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 batch_id,
                 award_item,
@@ -515,10 +521,12 @@ def import_vendor_books(
                 json.dumps(raw, ensure_ascii=False),
                 get_field("category"),
                 get_field("book_type"),
+                get_field("policy_topic"),
                 get_field("summary"),
                 get_field("source_url"),
                 get_field("recommendation_source"),
                 get_field("eligibility_label"),
+                get_field("classification_number"),
             ),
         )
         records_inserted += 1
