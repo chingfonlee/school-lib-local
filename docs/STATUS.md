@@ -1,6 +1,6 @@
 ---
 session_state: open
-current_action: executing
+current_action: task-close
 current_task: task-test-import-service-fixtures
 planning_task: ""
 planning_type: ""

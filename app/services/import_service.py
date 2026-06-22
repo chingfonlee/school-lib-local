@@ -280,6 +280,8 @@ def confirm_import(
             "author": get_field("author"),
             "publisher": get_field("publisher"),
             "award_item": get_field("award_item"),
+            "eligibility_label": get_field("eligibility_label"),
+            "recommendation_source": get_field("recommendation_source"),
         }
         completeness = compute_completeness(book, project_type=proj_type)
 
@@ -500,6 +502,8 @@ def import_vendor_books(
             "author": get_field("author"),
             "publisher": get_field("publisher"),
             "award_item": award_item,
+            "eligibility_label": get_field("eligibility_label"),
+            "recommendation_source": get_field("recommendation_source"),
         }
         completeness = compute_completeness(book, project_type=proj_type)
 
