@@ -1,6 +1,6 @@
 ---
 session_state: closed
-current_action: executing
+current_action: task-close
 current_task: task-export-include-incomplete
 planning_task: ""
 planning_type: ""
