@@ -8,7 +8,6 @@ import openpyxl
 from openpyxl.utils import column_index_from_string
 
 from app.database import get_connection
-from app.services.validation_service import check_export_readiness
 
 # H欄合法值（來源：範本 N5:N13）— 與 validation_service.py 中的常數保持同步
 GENERAL_BOOKS_H_ALLOWED = {
@@ -80,12 +79,6 @@ def _get_price(book: dict, price_field: str) -> float:
 
 
 def export_local_culture(settings: ExportSettings) -> str:
-    readiness = check_export_readiness(settings.project_id, settings.price_field)
-    blocking = [d for d in readiness["details"] if not d["can_export"] and d["match_status"] != "already_owned"]
-    if blocking:
-        titles = "; ".join(d["title"] for d in blocking[:5])
-        raise ValueError(f"以下書目缺少必填欄位無法匯出：{titles}")
-
     conn = get_connection()
     tmpl = _load_export_template_for_project(settings.project_id, conn)
     conn.close()
@@ -226,12 +219,6 @@ def export_local_culture(settings: ExportSettings) -> str:
 
 
 def export_general_books(settings: ExportSettings) -> str:
-    readiness = check_export_readiness(settings.project_id, settings.price_field)
-    blocking = [d for d in readiness["details"] if not d["can_export"] and d["match_status"] != "already_owned"]
-    if blocking:
-        titles = "; ".join(d["title"] for d in blocking[:5])
-        raise ValueError(f"以下書目缺少必填欄位無法匯出：{titles}")
-
     conn = get_connection()
     tmpl = _load_export_template_for_project(settings.project_id, conn)
     conn.close()

@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-export-include-incomplete
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-06-22
 # Project Status
 
 ## Active Tasks
+
+- id: task-export-include-incomplete
+  status: active
+  branch: fix/task-export-include-incomplete
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-selection-performance-pagination
   status: done

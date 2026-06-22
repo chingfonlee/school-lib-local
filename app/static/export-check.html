@@ -143,9 +143,9 @@ function renderHint(d) {
   alertArea.innerHTML = '';
 
   if (d.missing_required > 0) {
-    btn.className = 'btn btn-danger';
-    hint.textContent = `有 ${d.missing_required} 本書缺少必填欄位，匯出時將排除這些書目`;
-    alertArea.innerHTML = `<div class="alert alert-error">有 ${d.missing_required} 本書缺少必填欄位（ISBN無效/缺書名/缺定價），匯出時自動排除。請到選書頁填入資料或取消勾選。</div>`;
+    btn.className = 'btn btn-primary';
+    hint.textContent = `有 ${d.missing_required} 本書缺少必填欄位，匯出後對應欄位將留空`;
+    alertArea.innerHTML = `<div class="alert alert-warn">有 ${d.missing_required} 本書缺少必填欄位（ISBN無效/缺書名/缺定價），匯出後對應欄位將留空。若不打算採購這些書目，請至選書頁移除。</div>`;
   } else if (d.needs_review > 0) {
     btn.className = 'btn btn-primary';
     hint.textContent = `有 ${d.needs_review} 本書缺少建議欄位，可繼續匯出`;
