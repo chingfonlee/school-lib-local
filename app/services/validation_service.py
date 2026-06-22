@@ -123,6 +123,7 @@ def check_export_readiness(project_id: int, price_field: str) -> dict:
 
         details.append(
             {
+                "sel_id": r["id"],
                 "vendor_book_id": r["vendor_book_id"],
                 "title": title or r["title"] or "",
                 "match_status": match_status,

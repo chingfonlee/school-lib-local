@@ -178,6 +178,19 @@ def get_selected_books(project_id: int) -> list:
     return result
 
 
+def remove_selection(selection_id: int) -> dict:
+    conn = get_connection()
+    result = conn.execute(
+        "DELETE FROM selection_items WHERE id = ?", (selection_id,)
+    )
+    count = result.rowcount
+    conn.commit()
+    conn.close()
+    if count == 0:
+        raise ValueError(f"selection_items.id={selection_id} 不存在")
+    return {"deleted": True, "selection_id": selection_id}
+
+
 def clear_all_selections(project_id: int) -> dict:
     conn = get_connection()
     result = conn.execute(

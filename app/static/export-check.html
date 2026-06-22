@@ -58,7 +58,7 @@
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>書名</th><th>比對狀態</th><th>完整度</th><th>缺少必填</th><th>缺少建議欄位</th>
+          <th>書名</th><th>比對狀態</th><th>完整度</th><th>缺少必填</th><th>缺少建議欄位</th><th>操作</th>
         </tr></thead>
         <tbody id="detail-body"></tbody>
       </table>
@@ -75,6 +75,20 @@
 <script>
 let pid = null;
 let lastCheck = null;
+let projectType = null;
+let bookDataMap = {};
+
+const H_ALLOWED = [
+  '喜閱網',
+  '文化部中小學生優良課外讀物選介',
+  '好書大家讀',
+  '金鼎獎',
+  '文化部Books from Taiwan等具高公信力推薦價值之圖書',
+  '國民中小學新生閱讀推動活動入選書單',
+  '圖書分級推薦書目、臺灣歷史文化分級推薦書目',
+  '其他國內外具公信力單位辦理之獎項(請備註獎項名稱)',
+  '學校自選(請備註原因)',
+];
 
 requireAuth().then(async () => {
   pid = getProjectId();
@@ -88,6 +102,7 @@ requireAuth().then(async () => {
     return;
   }
   document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
+  projectType = proj.project_type;
   document.getElementById('price-field').value = proj.price_field;
   document.getElementById('subtotal-mode').value = proj.subtotal_mode;
   await runCheck();
@@ -102,6 +117,8 @@ async function runCheck() {
     api(`/api/selections/?project_id=${pid}`)
   ]);
   lastCheck = data;
+  bookDataMap = {};
+  selData.items.forEach(b => { bookDataMap[b.id] = b; });
   renderStats(data);
   renderDetails(data.details);
   renderHint(data);
@@ -122,18 +139,28 @@ function renderStats(d) {
 function renderDetails(details) {
   const tbody = document.getElementById('detail-body');
   if (!details.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:40px">尚無選書</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:40px">尚無選書</td></tr>';
     return;
   }
-  tbody.innerHTML = details.map(d => `
+  tbody.innerHTML = details.map(d => {
+    const isOwned = d.match_status === 'already_owned';
+    const actionCell = isOwned ? '<td></td>' : `<td style="white-space:nowrap">
+      <button class="btn btn-secondary btn-sm" onclick="removeBook(${d.sel_id})">移除</button>
+      <button class="btn btn-secondary btn-sm" onclick="toggleCheckEdit(${d.sel_id}, ${d.vendor_book_id})" style="margin-left:4px">修正</button>
+    </td>`;
+    return `
     <tr>
       <td>${d.title || '—'}</td>
       <td>${badge(d.match_status)}</td>
       <td>${badge(d.completeness_status)}</td>
       <td class="missing-list">${d.missing_blocking_fields.length ? d.missing_blocking_fields.join('、') : '<span style="color:#1d8348">無</span>'}</td>
       <td class="missing-list">${d.missing_review_fields.length ? d.missing_review_fields.join('、') : '<span style="color:#1d8348">無</span>'}</td>
+      ${actionCell}
     </tr>
-  `).join('');
+    <tr id="check-edit-row-${d.sel_id}" style="display:none">
+      <td colspan="6" style="padding:0;background:#f9f9f9">${buildEditForm(d.sel_id, d.vendor_book_id)}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderHint(d) {
@@ -145,7 +172,7 @@ function renderHint(d) {
   if (d.missing_required > 0) {
     btn.className = 'btn btn-primary';
     hint.textContent = `有 ${d.missing_required} 本書缺少必填欄位，匯出後對應欄位將留空`;
-    alertArea.innerHTML = `<div class="alert alert-warn">有 ${d.missing_required} 本書缺少必填欄位（ISBN無效/缺書名/缺定價），匯出後對應欄位將留空。若不打算採購這些書目，請至選書頁移除。</div>`;
+    alertArea.innerHTML = `<div class="alert alert-warn">有 ${d.missing_required} 本書缺少必填欄位（ISBN無效/缺書名/缺定價），匯出後對應欄位將留空。可在下方表格直接修正欄位或移除書目。</div>`;
   } else if (d.needs_review > 0) {
     btn.className = 'btn btn-primary';
     hint.textContent = `有 ${d.needs_review} 本書缺少建議欄位，可繼續匯出`;
@@ -158,6 +185,76 @@ function renderHint(d) {
 
 function goExport() {
   window.location.href = '/export.html';
+}
+
+function buildEditForm(selId, vendorBookId) {
+  const b = bookDataMap[vendorBookId] || {};
+  const ov = JSON.parse(b.user_overrides || '{}');
+  const v = (field) => (ov[field] || b[field] || '').toString().replace(/"/g, '&quot;');
+  const curElig = ov.eligibility_label || b.eligibility_label || '';
+  const curRecSrc = ov.recommendation_source || b.recommendation_source || '';
+  const eligOptions = ['', '必選', '推薦', '自選'].map(val =>
+    `<option value="${val}" ${curElig === val ? 'selected' : ''}>${val || '（原始）'}</option>`).join('');
+  const recSrcOptions = ['', ...H_ALLOWED].map(val =>
+    `<option value="${val}" ${curRecSrc === val ? 'selected' : ''}>${val || '（原始）'}</option>`).join('');
+  const generalFields = projectType === 'general_books' ? `
+    <div class="field-row"><label>必選/推薦（A欄）</label><select data-check-bookid="${vendorBookId}" data-field="eligibility_label">${eligOptions}</select></div>
+    <div class="field-row"><label>H欄推薦來源</label><select data-check-bookid="${vendorBookId}" data-field="recommendation_source">${recSrcOptions}</select></div>
+    <div class="field-row"><label>備註（L欄）</label><input type="text" value="${v('award_notes')}" data-check-bookid="${vendorBookId}" data-field="award_notes"></div>` : '';
+  return `<div class="inline-edit open" style="padding:12px 16px">
+    <div class="field-row"><label>書名</label><input type="text" value="${v('title')}" data-check-bookid="${vendorBookId}" data-field="title"></div>
+    <div class="field-row"><label>作者</label><input type="text" value="${v('author')}" data-check-bookid="${vendorBookId}" data-field="author"></div>
+    <div class="field-row"><label>出版社</label><input type="text" value="${v('publisher')}" data-check-bookid="${vendorBookId}" data-field="publisher"></div>
+    <div class="field-row"><label>獲獎項目</label><input type="text" value="${v('award_item')}" data-check-bookid="${vendorBookId}" data-field="award_item"></div>
+    ${generalFields}
+    <div class="field-row"><label>定價</label><input type="number" value="${v('list_price')}" data-check-bookid="${vendorBookId}" data-field="list_price"></div>
+    <div class="field-row"><label>單價</label><input type="number" value="${v('purchase_price')}" data-check-bookid="${vendorBookId}" data-field="purchase_price"></div>
+    <button class="btn btn-primary btn-sm" onclick="saveCheckEdit(${selId}, ${vendorBookId})">儲存修正</button>
+    <button class="btn btn-secondary btn-sm" onclick="toggleCheckEdit(${selId}, ${vendorBookId})">取消</button>
+  </div>`;
+}
+
+function toggleCheckEdit(selId, vendorBookId) {
+  const row = document.getElementById('check-edit-row-' + selId);
+  if (!row) return;
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+async function removeBook(selId) {
+  if (!confirm('確定從選書清單移除此書？')) return;
+  try {
+    await api(`/api/selections/${selId}`, { method: 'DELETE' });
+    await runCheck();
+  } catch (e) {
+    showToast('移除失敗：' + e.message);
+  }
+}
+
+async function saveCheckEdit(selId, vendorBookId) {
+  const inputs = document.querySelectorAll(`[data-check-bookid="${vendorBookId}"]`);
+  const overrides = {};
+  inputs.forEach(inp => { overrides[inp.dataset.field] = inp.value.trim(); });
+  try {
+    await api(`/api/books/${vendorBookId}/overrides`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overrides })
+    });
+    const exportFields = ['eligibility_label', 'recommendation_source', 'award_notes'];
+    const selOverrides = {};
+    exportFields.forEach(f => { if (f in overrides) selOverrides[f] = overrides[f]; });
+    if (Object.keys(selOverrides).length > 0) {
+      await api(`/api/selections/${selId}/overrides`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides: selOverrides })
+      });
+    }
+    showToast('修正已儲存');
+    await runCheck();
+  } catch (e) {
+    showToast('儲存失敗：' + e.message);
+  }
 }
 </script>
 </body>
