@@ -1,7 +1,7 @@
 ---
-session_state: open
-current_action: task-close
-current_task: task-user-docs-foundation
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-06-22
 # Project Status
 
 ## Active Tasks
+
+- id: task-user-docs-foundation
+  status: done
+  branch: ""
+  base_branch: main
+  last_log: 2026-06-22-180000.md
+  last_agent: claude
 
 - id: task-import-profiles-project-type
   status: done
