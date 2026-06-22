@@ -1,6 +1,6 @@
 ---
 session_state: open
-current_action: executing
+current_action: task-close
 current_task: task-test-foundation-core-services
 planning_task: ""
 planning_type: ""
