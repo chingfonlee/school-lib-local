@@ -285,8 +285,8 @@ def confirm_import(
             "publish_date, list_price, purchase_price, publisher, age_range, "
             "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
             "category, book_type, policy_topic, summary, source_url, recommendation_source, "
-            "eligibility_label, classification_number) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "eligibility_label, classification_number, award_notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 batch_id,
                 book["award_item"],
@@ -313,6 +313,7 @@ def confirm_import(
                 get_field("recommendation_source"),
                 get_field("eligibility_label"),
                 get_field("classification_number"),
+                get_field("award_notes"),
             ),
         )
         records_inserted += 1
@@ -500,8 +501,8 @@ def import_vendor_books(
             "publish_date, list_price, purchase_price, publisher, age_range, "
             "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
             "category, book_type, policy_topic, summary, source_url, recommendation_source, "
-            "eligibility_label, classification_number) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "eligibility_label, classification_number, award_notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 batch_id,
                 award_item,
@@ -528,6 +529,7 @@ def import_vendor_books(
                 get_field("recommendation_source"),
                 get_field("eligibility_label"),
                 get_field("classification_number"),
+                get_field("award_notes"),
             ),
         )
         records_inserted += 1
