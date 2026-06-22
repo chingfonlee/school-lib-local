@@ -1,7 +1,7 @@
 ---
-session_state: open
-current_action: task-close
-current_task: task-general-books-completeness
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -14,11 +14,11 @@ updated: 2026-06-22
 ## Active Tasks
 
 - id: task-general-books-completeness
-  status: active
-  branch: fix/task-general-books-completeness
+  status: done
+  branch: ""
   base_branch: main
-  last_log: ""
-  last_agent: ""
+  last_log: 2026-06-22-161657.md
+  last_agent: claude
 
 - id: task-export-check-edit
   status: done
