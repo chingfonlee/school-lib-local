@@ -17,6 +17,13 @@ from app.services.import_service import (
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 
 
+def _resolve_project_type(conn, project_id: int) -> str:
+    row = conn.execute(
+        "SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    return row["project_type"] if row else "local_culture"
+
+
 @router.post("/holdings")
 async def upload_holdings(
     file: UploadFile = File(...),
@@ -69,10 +76,7 @@ async def confirm_vendor_books(
         now = datetime.now(timezone.utc).isoformat()
         conn = get_connection()
         try:
-            proj_row = conn.execute(
-                "SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)
-            ).fetchone()
-            proj_type = proj_row["project_type"] if proj_row else "local_culture"
+            proj_type = _resolve_project_type(conn, project_id)
             row = conn.execute(
                 "INSERT OR IGNORE INTO import_profiles"
                 "(name, file_type, column_mappings, project_type, source_type, "
