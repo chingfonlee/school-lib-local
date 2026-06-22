@@ -1,7 +1,7 @@
 ---
-session_state: open
-current_action: task-close
-current_task: task-export-check-edit
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -14,10 +14,10 @@ updated: 2026-06-22
 ## Active Tasks
 
 - id: task-export-check-edit
-  status: active
-  branch: feat/task-export-check-edit
+  status: done
+  branch: ""
   base_branch: main
-  last_log: 2026-06-22-impl.md
+  last_log: 2026-06-22-154155.md
   last_agent: claude
 
 - id: task-export-include-incomplete
