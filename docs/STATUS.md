@@ -1,5 +1,5 @@
 ---
-session_state: open
+session_state: closed
 current_action: executing
 current_task: task-export-include-incomplete
 planning_task: ""
@@ -17,8 +17,8 @@ updated: 2026-06-22
   status: active
   branch: fix/task-export-include-incomplete
   base_branch: main
-  last_log: ""
-  last_agent: ""
+  last_log: 2026-06-22-150702.md
+  last_agent: claude
 
 - id: task-selection-performance-pagination
   status: done
