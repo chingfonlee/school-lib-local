@@ -225,6 +225,10 @@ def confirm_import(
     df.columns = [str(c).strip() for c in df.columns]
 
     conn = get_connection()
+    proj_row = conn.execute(
+        "SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    proj_type = proj_row["project_type"] if proj_row else None
     _clear_vendor_books_for_project(conn, project_id)
     batch_row = conn.execute(
         "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
@@ -277,7 +281,7 @@ def confirm_import(
             "publisher": get_field("publisher"),
             "award_item": get_field("award_item"),
         }
-        completeness = compute_completeness(book)
+        completeness = compute_completeness(book, project_type=proj_type)
 
         conn.execute(
             "INSERT INTO vendor_books"
@@ -435,6 +439,10 @@ def import_vendor_books(
     """Legacy single-step import with auto-detected column mapping."""
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
+    proj_row = conn.execute(
+        "SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    proj_type = proj_row["project_type"] if proj_row else None
 
     df = _read_excel_with_detected_header(file_bytes, "openpyxl", VENDOR_COLUMN_HINTS)
     df.columns = [str(c).strip() for c in df.columns]
@@ -493,7 +501,7 @@ def import_vendor_books(
             "publisher": get_field("publisher"),
             "award_item": award_item,
         }
-        completeness = compute_completeness(book)
+        completeness = compute_completeness(book, project_type=proj_type)
 
         conn.execute(
             "INSERT INTO vendor_books"

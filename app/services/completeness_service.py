@@ -14,7 +14,7 @@ def _get(book: dict, field: str, overrides: dict | None) -> str:
     return ""
 
 
-def compute(book: dict, overrides: dict | None = None) -> Literal[
+def compute(book: dict, overrides: dict | None = None, project_type: str | None = None) -> Literal[
     "export_ready", "needs_review", "missing_required", "unknown"
 ]:
     title = _get(book, "title", overrides)
@@ -27,8 +27,17 @@ def compute(book: dict, overrides: dict | None = None) -> Literal[
 
     author = _get(book, "author", overrides)
     publisher = _get(book, "publisher", overrides)
-    award_item = _get(book, "award_item", overrides)
 
+    if project_type == "general_books":
+        eligibility_label = _get(book, "eligibility_label", overrides)
+        recommendation_source = _get(book, "recommendation_source", overrides)
+        if not eligibility_label or not recommendation_source:
+            return "missing_required"
+        if not author or not publisher:
+            return "needs_review"
+        return "export_ready"
+
+    award_item = _get(book, "award_item", overrides)
     if not author or not publisher or not award_item:
         return "needs_review"
 
@@ -38,14 +47,20 @@ def compute(book: dict, overrides: dict | None = None) -> Literal[
 def recompute_for_book(vendor_book_id: int) -> str:
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM vendor_books WHERE id = ?", (vendor_book_id,)
+        "SELECT vb.*, pp.project_type "
+        "FROM vendor_books vb "
+        "JOIN import_batches ib ON vb.batch_id = ib.id "
+        "JOIN procurement_projects pp ON ib.project_id = pp.id "
+        "WHERE vb.id = ?",
+        (vendor_book_id,),
     ).fetchone()
     if row is None:
         conn.close()
         return "unknown"
     book = dict(row)
+    project_type = book.pop("project_type", None)
     overrides = json.loads(book.get("user_overrides") or "{}")
-    status = compute(book, overrides)
+    status = compute(book, overrides, project_type=project_type)
     conn.execute(
         "UPDATE vendor_books SET completeness_status = ? WHERE id = ?",
         (status, vendor_book_id),
