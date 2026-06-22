@@ -114,6 +114,12 @@
 
   <div id="book-grid" class="books-grid"></div>
 
+  <div id="pagination" style="display:none;margin-top:16px;justify-content:center;align-items:center;gap:8px">
+    <button class="btn btn-secondary btn-sm" id="page-prev" onclick="goPage(-1)">上一頁</button>
+    <span id="page-info" style="font-size:13px;color:#666"></span>
+    <button class="btn btn-secondary btn-sm" id="page-next" onclick="goPage(1)">下一頁</button>
+  </div>
+
   <div id="cleared-section" style="display:none;margin-top:32px">
     <h3 style="font-size:15px;color:#6e6e73;border-top:1px solid #e0e0e0;padding-top:20px;margin-bottom:12px">
       來源書單已清除 — 以下為保存的採購紀錄快照
@@ -129,6 +135,9 @@ let projectType = null;
 let allBooks = [];
 let selMap = {};
 let selIdMap = {};
+const PAGE_SIZE = 100;
+let currentPage = 1;
+let filteredBooks = [];
 
 const H_ALLOWED = [
   '喜閱網',
@@ -308,8 +317,54 @@ function applyFilter() {
   if (text) filtered = filtered.filter(b => includesKeyword(b, text));
 
   filtered = [...filtered].sort((a, b) => compareBooks(a, b, sortMode));
-  document.getElementById('result-count').textContent = `共 ${filtered.length} 筆`;
-  render(filtered);
+  filteredBooks = filtered;
+  currentPage = 1;
+  updateResultCount();
+  renderCurrentPage();
+}
+
+function renderCurrentPage() {
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, filteredBooks.length);
+  render(filteredBooks.slice(start, end));
+  updatePagination();
+}
+
+function updateResultCount() {
+  const total = filteredBooks.length;
+  if (total === 0) {
+    document.getElementById('result-count').textContent = '';
+    return;
+  }
+  const start = (currentPage - 1) * PAGE_SIZE + 1;
+  const end = Math.min(currentPage * PAGE_SIZE, total);
+  document.getElementById('result-count').textContent =
+    `第 ${start}–${end} 筆 / 共 ${total} 筆`;
+}
+
+function updatePagination() {
+  const total = filteredBooks.length;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const pag = document.getElementById('pagination');
+  if (totalPages <= 1) {
+    pag.style.display = 'none';
+    return;
+  }
+  pag.style.display = 'flex';
+  document.getElementById('page-prev').disabled = currentPage <= 1;
+  document.getElementById('page-next').disabled = currentPage >= totalPages;
+  document.getElementById('page-info').textContent =
+    `第 ${currentPage} 頁 / 共 ${totalPages} 頁`;
+}
+
+function goPage(delta) {
+  const totalPages = Math.ceil(filteredBooks.length / PAGE_SIZE);
+  const next = currentPage + delta;
+  if (next < 1 || next > totalPages) return;
+  currentPage = next;
+  updateResultCount();
+  renderCurrentPage();
+  document.getElementById('book-grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function resetFilters() {

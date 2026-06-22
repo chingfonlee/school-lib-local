@@ -1,17 +1,24 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-selection-performance-pagination
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
-last_agent: codex
-updated: 2026-06-21
+last_agent: claude
+updated: 2026-06-22
 ---
 
 # Project Status
 
 ## Active Tasks
+
+- id: task-selection-performance-pagination
+  status: active
+  branch: fix/task-selection-performance-pagination
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-general-books-procurement
   status: done
