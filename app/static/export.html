@@ -144,7 +144,7 @@ async function loadPreview() {
   if (check.missing_required > 0) {
     document.getElementById('export-alert').style.display = 'block';
     document.getElementById('export-alert').textContent =
-      `注意：有 ${check.missing_required} 本書缺少必填欄位，匯出時將自動排除這些書目。`;
+      `注意：有 ${check.missing_required} 本書缺少必填欄位，匯出時欄位將留空，請確認後再匯出。`;
   }
 }
 
