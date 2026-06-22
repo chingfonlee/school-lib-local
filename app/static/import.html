@@ -173,6 +173,29 @@
 <div id="toast"></div>
 <script src="/js/common.js"></script>
 <script>
+const TECHNICAL_KEYWORDS = [
+  'Traceback', 'Exception', 'Error', 'KeyError', 'ValueError',
+  'TypeError', 'IndexError', 'No sheet named', 'Worksheet named',
+];
+
+function isFriendlyChineseMessage(message) {
+  if (!message || message.length > 160) return false;
+  if (!/[一-鿿]/.test(message)) return false;
+  if (TECHNICAL_KEYWORDS.some(kw => message.includes(kw))) return false;
+  return true;
+}
+
+function formatImportError(message, context) {
+  if (isFriendlyChineseMessage(message)) return message;
+  if (context === 'holdings') {
+    return '匯入失敗。請確認 Excel 格式正確、欄位含有 ISBN 或書名，再重新上傳。';
+  }
+  if (context === 'vendor-preview') {
+    return '無法讀取檔案，請確認為有效的 .xlsx 格式。';
+  }
+  return '匯入失敗。請確認欄位對應正確，書名、ISBN 欄位有資料，再重試。';
+}
+
 let pid = null;
 let wizardFile = null;
 let previewData = null;
@@ -248,7 +271,7 @@ async function uploadHoldings(file) {
     const result = await api('/api/imports/holdings', { method: 'POST', body: fd });
     const replaced = result.replaced ? '已覆蓋既有館藏，' : '';
     let sheetInfo = '';
-    if (result.sheet_summaries && result.sheet_summaries.length > 1) {
+    if (result.sheet_summaries && result.sheet_summaries.length >= 1) {
       sheetInfo = '<br>各工作表：' + result.sheet_summaries
         .map(s => `${s.sheet_name}（${s.record_count} 筆）`).join('、');
     }
@@ -268,10 +291,11 @@ async function uploadHoldings(file) {
         ✓ ${replaced}共 <strong>${result.record_count}</strong> 筆
         ${result.unmapped_fields && result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}` : ''}
         ${sheetInfo}${skippedInfo}${matchInfo}
-      </div>`;
+      </div>
+      <p style="margin-top:10px;font-size:14px"><a href="/match.html">前往比對結果 →</a></p>`;
     showToast('館藏匯入完成');
   } catch (e) {
-    el.innerHTML = `<div class="alert alert-error">匯入失敗：${e.message}</div>`;
+    el.innerHTML = `<div class="alert alert-error">${formatImportError(e.message, 'holdings')}</div>`;
   }
 }
 
@@ -303,7 +327,7 @@ async function handleFileUpload(file) {
     goToStep('B');
   } catch (e) {
     document.getElementById('step-A-status').innerHTML =
-      `<div class="alert alert-error">讀取失敗：${e.message}</div>`;
+      `<div class="alert alert-error">${formatImportError(e.message, 'vendor-preview')}</div>`;
     wizardFile = null;
   }
 }
@@ -332,7 +356,7 @@ async function refreshPreview() {
   try {
     await callPreview(sheetName, hr1 - 1);
   } catch (e) {
-    document.getElementById('step-B-status').textContent = '更新失敗：' + e.message;
+    document.getElementById('step-B-status').textContent = formatImportError(e.message, 'vendor-preview');
   }
 }
 
@@ -459,12 +483,15 @@ async function doConfirmImport() {
         ${result.skipped_count ? `（略過空白列 ${result.skipped_count} 筆）` : ''}
         ${matchSummary}
       </div>
-      <p style="margin-top:8px;font-size:14px"><a href="/match.html">前往比對結果 →</a></p>`;
+      <p style="margin-top:10px;font-size:14px;display:flex;gap:16px;flex-wrap:wrap">
+        <a href="/match.html">前往比對結果 →</a>
+        <a href="/selection.html">前往選書 →</a>
+      </p>`;
     btn.textContent = '已匯入';
     showToast('書單匯入完成');
   } catch (e) {
     document.getElementById('step-E-result').innerHTML =
-      `<div class="alert alert-error">匯入失敗：${e.message}</div>`;
+      `<div class="alert alert-error">${formatImportError(e.message, 'vendor-confirm')}</div>`;
     btn.disabled = false;
     btn.textContent = '確認匯入';
   }
