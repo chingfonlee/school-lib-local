@@ -1,6 +1,6 @@
 ---
 session_state: closed
-current_action: executing
+current_action: task-close
 current_task: task-selection-performance-pagination
 planning_task: ""
 planning_type: ""
