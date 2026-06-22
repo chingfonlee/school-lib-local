@@ -32,6 +32,10 @@
     <div class="stat-card gray"><div class="num" id="stat-selection">—</div><div class="label">已選書</div></div>
     <div class="stat-card gray"><div class="num" id="stat-last-export">—</div><div class="label">上次匯出</div></div>
   </div>
+  <div id="next-step-card" class="card" style="display:none;margin-top:16px">
+    <h2>下一步</h2>
+    <div id="next-step-content"></div>
+  </div>
   <div class="card">
     <h2>快速導覽</h2>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
@@ -45,6 +49,51 @@
 <div id="toast"></div>
 <script src="/js/common.js"></script>
 <script>
+function renderNextStep(stats, selCount, readiness) {
+  const card = document.getElementById('next-step-card');
+  const el = document.getElementById('next-step-content');
+  card.style.display = '';
+
+  const holdings = stats.total_holdings || 0;
+  const vendor = stats.total_vendor_books || 0;
+  const available = (stats.match_status || {}).available || 0;
+
+  if (holdings === 0) {
+    el.innerHTML = '<p>尚未匯入館藏，建議先匯入館藏再繼續。</p>'
+      + '<a class="btn btn-secondary" href="/import.html">前往匯入 →</a>';
+    return;
+  }
+  if (vendor === 0) {
+    el.innerHTML = '<p>尚未匯入書商書單。</p>'
+      + '<a class="btn btn-secondary" href="/import.html">前往匯入 →</a>';
+    return;
+  }
+  if (available === 0) {
+    el.innerHTML = '<p>書商書單比對後無可採購書籍，請確認館藏內容是否完整。</p>'
+      + '<a class="btn btn-secondary" href="/match.html">查看比對結果 →</a>';
+    return;
+  }
+  if (selCount === 0) {
+    el.innerHTML = `<p>有 <strong>${available}</strong> 本可採購，建議前往選書。</p>`
+      + '<a class="btn btn-secondary" href="/selection.html">前往選書 →</a>';
+    return;
+  }
+  let readyLine = '';
+  if (readiness) {
+    const r = readiness.export_ready || 0;
+    const n = readiness.needs_review || 0;
+    const m = readiness.missing_required || 0;
+    readyLine = `<p style="margin:8px 0">
+      <span class="badge badge-export_ready">就緒 ${r} 本</span>
+      <span class="badge badge-needs_review">待補充 ${n} 本</span>
+      <span class="badge badge-missing_required">缺必填 ${m} 本</span>
+    </p>`;
+  }
+  el.innerHTML = `<p>已選 <strong>${selCount}</strong> 本書。</p>`
+    + readyLine
+    + '<a class="btn btn-secondary" href="/export-check.html">前往匯出前檢查 →</a>';
+}
+
 requireAuth().then(async () => {
   const pid = getProjectId();
   if (!pid) {
@@ -78,6 +127,16 @@ requireAuth().then(async () => {
   } else {
     document.getElementById('stat-last-export').textContent = '無';
   }
+  const selCount = selSummary.summary.count || 0;
+  let readiness = null;
+  if (selCount > 0) {
+    try {
+      const pf = encodeURIComponent(proj.price_field || 'purchase_price');
+      const sm = encodeURIComponent(proj.subtotal_mode || 'quantity_times_purchase_price');
+      readiness = await api(`/api/exports/check?project_id=${pid}&price_field=${pf}&subtotal_mode=${sm}`);
+    } catch { /* 不影響其他顯示 */ }
+  }
+  renderNextStep(stats, selCount, readiness);
 });
 </script>
 </body>
