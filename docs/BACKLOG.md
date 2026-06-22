@@ -14,6 +14,23 @@
 
 ## 候選任務
 
+### import_service 測試 fixture
+
+- status: idea
+- priority: medium
+- type: chore
+- task-id: task-test-import-service-fixtures（待建立）
+- description:
+  建立 import_service 的小型測試 fixture，使用 in-memory SQLite 與最小 Excel bytes，
+  覆蓋 confirm_import / import_vendor_books 的欄位對應與 project_type completeness 行為。
+- notes:
+  前置 task-test-foundation-core-services 已完成（pytest、completeness_service、
+  _resolve_project_type 測試）。本項目作為下一層測試延伸。
+- not in scope:
+  FastAPI TestClient、Playwright E2E、完整真實 Excel 樣本、大型 fixture 系統。
+- decision:
+  後續另開 task，不在目前 active tasks 中。
+
 ### 階段提示按鈕光暈效果
 
 - status: idea
