@@ -1,7 +1,7 @@
 ---
-session_state: open
-current_action: task-close
-current_task: task-import-profiles-project-type
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -14,11 +14,11 @@ updated: 2026-06-22
 ## Active Tasks
 
 - id: task-import-profiles-project-type
-  status: active
-  branch: fix/task-import-profiles-project-type
+  status: done
+  branch: ""
   base_branch: main
-  last_log: ""
-  last_agent: ""
+  last_log: 2026-06-22-165819.md
+  last_agent: claude
 
 - id: task-general-books-completeness
   status: done
