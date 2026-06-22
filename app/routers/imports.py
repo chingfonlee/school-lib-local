@@ -69,14 +69,19 @@ async def confirm_vendor_books(
         now = datetime.now(timezone.utc).isoformat()
         conn = get_connection()
         try:
+            proj_row = conn.execute(
+                "SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)
+            ).fetchone()
+            proj_type = proj_row["project_type"] if proj_row else "local_culture"
             row = conn.execute(
                 "INSERT OR IGNORE INTO import_profiles"
                 "(name, file_type, column_mappings, project_type, source_type, "
                 "header_row, mappings, extra_field_settings, created_at, updated_at) "
-                "VALUES (?, 'vendor_books', ?, 'local_culture', 'excel', ?, ?, ?, ?, ?)",
+                "VALUES (?, 'vendor_books', ?, ?, 'excel', ?, ?, ?, ?, ?)",
                 (
                     profile_name,
                     json.dumps(mappings_dict, ensure_ascii=False),
+                    proj_type,
                     header_row,
                     json.dumps(mappings_dict, ensure_ascii=False),
                     json.dumps(extra_list, ensure_ascii=False),
