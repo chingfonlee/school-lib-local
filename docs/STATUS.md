@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-project-delete-backup-restore
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-06-23
 # Project Status
 
 ## Active Tasks
+
+- id: task-project-delete-backup-restore
+  status: active
+  branch: feat/task-project-delete-backup-restore
+  base_branch: main
+  last_log: ""
+  last_agent: claude
 
 - id: task-project-budget-summary
   status: done
