@@ -1,6 +1,6 @@
 ---
 session_state: open
-current_action: executing
+current_action: task-close
 current_task: task-flow-stepper-nav
 planning_task: ""
 planning_type: ""
