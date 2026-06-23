@@ -690,3 +690,35 @@ curl -s http://127.0.0.1:8000/api/projects/ -b "session=<tok>"
 | JS lint | 不適用（無 ESLint 設定） | 手動確認 |
 | Build | 不適用（FastAPI StaticFiles serve） | 啟動 uvicorn 後手動驗證 |
 | 服務啟動 | `.venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000` | 手動啟動後驗證 |
+
+## 驗證結果（2026-06-23）
+
+### pytest
+
+```
+58 passed（含 13 個新增測試，既有 45 個全部通過）
+.venv\Scripts\pytest.exe tests/ -v
+```
+
+### API 驗證（本機 uvicorn 手動驗證）
+
+| 項目 | 結果 |
+|------|------|
+| `GET /api/projects/{id}/delete-preview` 不存在 → 404 | pass |
+| `GET /api/projects/{id}/delete-preview` 存在 → 6 個統計欄位 | pass |
+| `DELETE /api/projects/{id}` 不存在 → 404 | pass |
+| `DELETE /api/projects/{id}` 存在 → 200 `{"ok":true}`，列表確認已移除 | pass |
+| `GET /api/backup/database` → 200，`Content-Disposition` 含日期檔名，SQLite magic bytes 正確 | pass |
+| `POST /api/backup/restore` 非 SQLite → 400 `magic bytes 不符` | pass |
+| `POST /api/backup/restore` 合法備份 → 200，`safety_backup` 已建立，還原後 DB 可存取 | pass |
+
+### projects.html 結構驗證
+
+| 元素 | 結果 |
+|------|------|
+| 「資料庫管理」card（備份 + 還原按鈕） | pass |
+| 卡片 `.btn-danger-outline` 刪除按鈕 | pass |
+| `delete-modal`：統計列表、`delete-confirm-btn` 直接 onclick binding | pass |
+| `restore-modal`：file input、確認還原 | pass |
+| `getProjectId()` 防呆、刪除 current project 顯示 toast | pass |
+| 既有 `.btn-danger`、背景圖、stepper nav 未受影響 | pass |
