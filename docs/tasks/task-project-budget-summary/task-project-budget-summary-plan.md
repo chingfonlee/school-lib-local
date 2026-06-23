@@ -3,7 +3,7 @@
 - task-id: task-project-budget-summary
 - type: feat
 - base branch: main
-- status: planning
+- status: verified
 
 ---
 
@@ -386,6 +386,27 @@ curl -s http://127.0.0.1:8000/api/projects/1 -b "session=<token>"
 建議截圖確認：
 - `projects.html`：有預算/無預算兩種卡片樣式。
 - `export-check.html`：超支警示（紅色）、未超支（綠色）、未設定三種狀態。
+
+---
+
+## 驗證結果（2026-06-23）
+
+| 驗證項目 | 結果 |
+|---------|------|
+| POST budget_amount=45000 | ✓ 200 |
+| POST budget_amount 留空（null）| ✓ 200 |
+| POST budget_amount=-1 | ✓ 422 拒絕 |
+| PUT budget 更新（45000→60000）| ✓ GET 確認 60000 |
+| PUT budget_amount=null 清空 | ✓ GET 確認 null |
+| PUT budget_amount=-500 | ✓ 422 拒絕 |
+| projects.html：表單預算欄位 | ✓ |
+| projects.html：卡片 NT$ 顯示 | ✓（JS 模板字串已確認） |
+| projects.html：編輯 Modal 預算欄位 | ✓ |
+| projects.html：openEdit 傳入 budget | ✓ |
+| export-check.html：13 項結構檢查 | ✓ 13/13 |
+| export-check.html：price-field 聯動 | ✓ |
+| export.html 自動填入（Step 4）| 未實作（可選，不阻塞） |
+| pytest 45 passed | ✓ |
 
 ---
 
