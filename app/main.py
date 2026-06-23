@@ -4,7 +4,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import get_config
 from app import database as db
-from app.routers import auth, projects, imports, books, selections, exports, holdings
+from app.routers import auth, projects, imports, books, selections, exports, holdings, backup
 
 app = FastAPI(title="School Library Procurement")
 
@@ -18,6 +18,7 @@ app.include_router(books.router)
 app.include_router(selections.router)
 app.include_router(exports.router)
 app.include_router(holdings.router)
+app.include_router(backup.router)
 
 
 @app.on_event("startup")

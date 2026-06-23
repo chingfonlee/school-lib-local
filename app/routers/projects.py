@@ -90,6 +90,123 @@ async def get_project(project_id: int, user_id: int = Depends(require_auth)):
     return dict(row)
 
 
+@router.get("/{project_id}/delete-preview")
+async def delete_preview(project_id: int, user_id: int = Depends(require_auth)):
+    conn = get_connection()
+    project = conn.execute(
+        "SELECT id, name FROM procurement_projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    if project is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="找不到專案")
+
+    selection_count = conn.execute(
+        "SELECT COUNT(*) FROM selection_items WHERE project_id = ?", (project_id,)
+    ).fetchone()[0]
+    export_job_count = conn.execute(
+        "SELECT COUNT(*) FROM export_jobs WHERE project_id = ?", (project_id,)
+    ).fetchone()[0]
+    import_batch_count = conn.execute(
+        "SELECT COUNT(*) FROM import_batches WHERE project_id = ?", (project_id,)
+    ).fetchone()[0]
+
+    batch_ids = [
+        r[0]
+        for r in conn.execute(
+            "SELECT id FROM import_batches WHERE project_id = ?", (project_id,)
+        ).fetchall()
+    ]
+    vendor_book_count = 0
+    holding_count = 0
+    if batch_ids:
+        placeholders = ",".join("?" * len(batch_ids))
+        vendor_book_count = conn.execute(
+            f"SELECT COUNT(*) FROM vendor_books WHERE batch_id IN ({placeholders})",
+            batch_ids,
+        ).fetchone()[0]
+        holding_count = conn.execute(
+            f"SELECT COUNT(*) FROM library_holdings WHERE batch_id IN ({placeholders})",
+            batch_ids,
+        ).fetchone()[0]
+
+    conn.close()
+    return {
+        "project_id": project_id,
+        "project_name": project["name"],
+        "selection_count": selection_count,
+        "export_job_count": export_job_count,
+        "import_batch_count": import_batch_count,
+        "vendor_book_count": vendor_book_count,
+        "holding_count": holding_count,
+    }
+
+
+@router.delete("/{project_id}")
+async def delete_project(project_id: int, user_id: int = Depends(require_auth)):
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT id FROM procurement_projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    if existing is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="找不到專案")
+
+    try:
+        batch_ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT id FROM import_batches WHERE project_id = ?", (project_id,)
+            ).fetchall()
+        ]
+
+        def _ph(n):
+            return ",".join("?" * n)
+
+        conn.execute("DELETE FROM selection_items WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM export_jobs WHERE project_id = ?", (project_id,))
+
+        if batch_ids:
+            bph = _ph(len(batch_ids))
+            vb_ids = [
+                r[0]
+                for r in conn.execute(
+                    f"SELECT id FROM vendor_books WHERE batch_id IN ({bph})", batch_ids
+                ).fetchall()
+            ]
+            if vb_ids:
+                conn.execute(
+                    f"DELETE FROM book_matches WHERE vendor_book_id IN ({_ph(len(vb_ids))})",
+                    vb_ids,
+                )
+            conn.execute(f"DELETE FROM vendor_books WHERE batch_id IN ({bph})", batch_ids)
+
+            h_ids = [
+                r[0]
+                for r in conn.execute(
+                    f"SELECT id FROM library_holdings WHERE batch_id IN ({bph})", batch_ids
+                ).fetchall()
+            ]
+            if h_ids:
+                conn.execute(
+                    f"UPDATE book_matches SET holding_id = NULL WHERE holding_id IN ({_ph(len(h_ids))})",
+                    h_ids,
+                )
+                conn.execute(
+                    f"DELETE FROM library_holdings WHERE batch_id IN ({bph})", batch_ids
+                )
+            conn.execute("DELETE FROM import_batches WHERE project_id = ?", (project_id,))
+
+        conn.execute("DELETE FROM procurement_projects WHERE id = ?", (project_id,))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"刪除失敗：{e}")
+
+    conn.close()
+    return {"ok": True}
+
+
 @router.put("/{project_id}")
 async def update_project(
     project_id: int, body: ProjectUpdate, user_id: int = Depends(require_auth)
