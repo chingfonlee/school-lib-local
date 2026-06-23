@@ -74,17 +74,22 @@ onclick="confirmDelete(${p.id},'${p.name}')"
 
 本任務改為顯式傳入 event，以便在函式內呼叫 `event.stopPropagation()`。
 
-### 現有 `.project-card` CSS
+### 現有 `.project-card` CSS（需求一實作後的狀態）
+
+需求一已實作，`cursor: pointer` 與基礎 hover shadow 已加入：
 
 ```css
 .project-card {
   background: #fff; border-radius: 12px; padding: 20px 24px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.07);
   display: flex; align-items: center; gap: 16px; margin-bottom: 12px;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
 }
+.project-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
 ```
 
-目前無 hover state、無 `cursor: pointer`。
+需求四將在此基礎上強化視覺回饋。
 
 ---
 
@@ -108,11 +113,13 @@ onclick="confirmDelete(${p.id},'${p.name}')"
 - 行為：呼叫 `setProject(id, name)` → 顯示 toast → 導向 `/import.html`（改自原 `/index.html`）。
 - 點擊按鈕**不得觸發**卡片的 onclick（需 `stopPropagation`）。
 
-### 視覺提示
+### 視覺提示（基礎，已實作）
 
 - 卡片整體加上 `cursor: pointer`。
-- hover 時略微提高陰影（`box-shadow: 0 4px 12px rgba(0,0,0,0.12)`），延續白卡片風格，不使用邊框或顏色變化。
-- 過渡動畫：`transition: box-shadow 0.15s`（已在 `.project-card` 外其他元素有使用相同模式）。
+- hover 時略微提高陰影（`box-shadow: 0 4px 12px rgba(0,0,0,0.12)`）。
+- 過渡動畫：`transition: box-shadow 0.15s`。
+
+此為初始實作。需求四（見下方）進一步強化視覺回饋。
 
 ---
 
@@ -185,6 +192,85 @@ if (getProjectId() == id) clearProject();
 
 ---
 
+## 需求四：卡片視覺回饋強化
+
+### 背景
+
+需求一的 hover shadow 僅有陰影加深，視覺提示不夠明顯。使用者難以一眼判斷整張卡片是否可點擊進入專案。
+
+### hover 視覺回饋
+
+hover 時同時顯示三種提示：
+
+| 效果 | 實作 |
+|------|------|
+| 左側藍色導引線 | `::before` 偽元素，`background: #0071e3`，`width: 3px` |
+| 卡片輕微浮起 | `transform: translateY(-1px)` |
+| 較明顯陰影 | `box-shadow: 0 8px 24px rgba(0,0,0,0.14)` |
+| 淡藍 border | `border-color: rgba(0,113,227,0.22)` |
+
+不使用大面積藍色背景，避免干擾內容閱讀。
+
+### 目前使用中專案的持續狀態提示
+
+- 在 `loadProjects` card template 中，若 `cur == p.id`，卡片 class 加上 `current`。
+- `.project-card.current` 顯示：
+  - 左側藍色導引線（與 hover 相同，永久可見）
+  - 淡藍 border（`border-color: rgba(0,113,227,0.22)`）
+- 保留既有「目前使用」badge，不移除。
+- 不影響 hover 互動行為（current 卡片仍可 hover、可點擊）。
+
+### CSS 設計
+
+```css
+/* 更新 .project-card */
+.project-card {
+  /* ...既有屬性... */
+  position: relative;
+  border: 1px solid rgba(0,0,0,0.04);
+  transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
+  /* cursor: pointer 已在需求一加入 */
+}
+
+/* 左側導引線偽元素 */
+.project-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 12px 0 0 12px;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+/* hover 狀態 */
+.project-card:hover {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  transform: translateY(-1px);
+  border-color: rgba(0,113,227,0.22);
+}
+.project-card:hover::before {
+  background: #0071e3;
+}
+
+/* 目前使用中卡片：永久顯示導引線 + 淡藍 border */
+.project-card.current {
+  border-color: rgba(0,113,227,0.22);
+}
+.project-card.current::before {
+  background: #0071e3;
+}
+```
+
+### 注意事項
+
+- `box-sizing: border-box` 全域設定，加 `border` 不會造成 layout shift（border 包含於元素寬度內）。
+- `position: relative` 為 `::before` 絕對定位的父容器，不影響 flex 排版。
+- `border-radius: 12px 0 0 12px` 讓左導引線跟隨卡片左側圓角。
+- `transform: translateY(-1px)` 浮起效果需同時更新 `transition` 屬性。
+
+---
+
 ## UI/UX 驗收條件
 
 | 場景 | 預期結果 |
@@ -198,13 +284,17 @@ if (getProjectId() == id) clearProject();
 | 刪除目前使用中專案 | modal 內顯示橙黃色額外警告文字 |
 | 確認刪除目前使用中專案 | 刪除成功，`clearProject()` 執行，列表重新載入，不跳頁 |
 | 取消刪除 | current project 不變 |
-| 卡片 hover | box-shadow 加深，cursor 為 pointer |
+| 卡片 hover（非 current） | 左側藍色導引線出現、卡片浮起 1px、陰影加深、淡藍 border |
+| 卡片 hover（current） | 同上（在既有導引線 + 淡藍 border 基礎上疊加 hover 效果） |
+| current 卡片（不 hover） | 左側藍色導引線永久可見，淡藍 border，保留「目前使用」badge |
 | 按鈕 hover | 原有 opacity 效果不受影響 |
+| 背景圖存在時 | 卡片 hover 效果仍清楚可見 |
 
 ---
 
 ## 非目標
 
+- 不做大面積藍色背景（hover 只用導引線 + 輕微陰影 + 淡 border）。
 - 不做專案排序或拖曳。
 - 不改備份 / 還原 API。
 - 不改資料庫 schema，不新增 migration。
