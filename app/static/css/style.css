@@ -232,7 +232,7 @@ tr:last-child td { border-bottom: none; }
 .project-card {
   background: #fff; border-radius: 12px; padding: 20px 24px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.07);
-  display: flex; align-items: center; gap: 16px; margin-bottom: 12px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px;
   cursor: pointer;
   position: relative;
   border: 1px solid rgba(0,0,0,0.04);
@@ -258,6 +258,26 @@ tr:last-child td { border-bottom: none; }
 .project-card .project-name { font-size: 16px; font-weight: 600; }
 .project-card .project-meta { font-size: 13px; color: #6e6e73; margin-top: 2px; }
 .project-card .project-actions { margin-left: auto; display: flex; gap: 8px; }
+.project-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.project-info { flex: 1; }
+.project-card-status {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: #6e6e73;
+  padding-top: 6px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+}
+.project-card-nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 
 /* Missing fields list */
 .missing-list { font-size: 12px; color: #c0392b; margin-top: 2px; }

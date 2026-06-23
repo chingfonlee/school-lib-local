@@ -47,7 +47,9 @@ _TEST_SCHEMA = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         batch_id INTEGER REFERENCES import_batches(id),
         title TEXT,
-        isbn TEXT
+        isbn TEXT,
+        list_price REAL,
+        purchase_price REAL
     )""",
     """CREATE TABLE library_holdings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,13 +68,18 @@ _TEST_SCHEMA = [
     """CREATE TABLE book_matches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         vendor_book_id INTEGER REFERENCES vendor_books(id),
-        holding_id INTEGER REFERENCES library_holdings(id)
+        holding_id INTEGER REFERENCES library_holdings(id),
+        match_status TEXT NOT NULL DEFAULT 'available',
+        matched_at TEXT NOT NULL DEFAULT '',
+        batch_run_id TEXT NOT NULL DEFAULT ''
     )""",
     """CREATE TABLE selection_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id INTEGER REFERENCES procurement_projects(id),
         vendor_book_id INTEGER,
-        selected_quantity INTEGER DEFAULT 1
+        selected_quantity INTEGER DEFAULT 1,
+        list_price REAL,
+        purchase_price REAL
     )""",
     """CREATE TABLE export_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

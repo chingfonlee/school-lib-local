@@ -160,27 +160,65 @@ async function loadProjects() {
   const cur = getProjectId();
   el.innerHTML = projects.map(p => {
     const isCurrent = cur == p.id;
+    const escapedName = p.name.replace(/'/g, "\\'");
+    const fmtDate = iso => new Date(iso).toLocaleDateString('zh-TW');
+    const fmtNum = n => Math.round(n).toLocaleString('zh-TW');
+    let importRow;
+    if (p.vendor_book_count === 0) {
+      importRow = '尚未匯入書商書目';
+    } else {
+      const ownedStr = p.already_owned_count > 0 ? ` · 館藏重複 ${p.already_owned_count} 本` : '';
+      const importDate = p.last_import ? `（${fmtDate(p.last_import)}）` : '';
+      importRow = `書商書目 ${p.vendor_book_count} 本${importDate}${ownedStr}`;
+    }
+    const selRow = p.selection_count === 0
+      ? '尚未選書'
+      : `已選 ${p.selection_count} 本 · 小計 NT$ ${fmtNum(p.selection_amount)} 元`;
+    let budgetRow;
+    if (p.budget_amount == null) {
+      budgetRow = '預算未設定';
+    } else if (p.selection_amount === 0) {
+      budgetRow = `預算 NT$ ${fmtNum(p.budget_amount)} 元（未使用）`;
+    } else {
+      const remaining = p.budget_amount - p.selection_amount;
+      const pct = Math.round(p.selection_amount / p.budget_amount * 100);
+      if (remaining >= 0) {
+        budgetRow = `預算剩餘 NT$ ${fmtNum(remaining)} 元（已用 ${pct}%）`;
+      } else {
+        budgetRow = `預算超支 NT$ ${fmtNum(-remaining)} 元`;
+      }
+    }
+    const exportRow = p.last_export
+      ? `上次匯出 ${fmtDate(p.last_export)}`
+      : '尚未匯出';
     return `
-    <div class="project-card${isCurrent ? ' current' : ''}" onclick="selectCard(${p.id},'${p.name.replace(/'/g,"\\'")}')">
-      <div>
-        <div class="project-name">${p.name} ${cur == p.id ? '<span class="badge badge-available">目前使用</span>' : ''}</div>
-        <div class="project-meta">
-          ${p.project_type === 'local_culture' ? '本土文化採購' : '一般圖書採購'} ·
-          已選 ${p.selection_count} 本 ·
-          ${p.last_export ? '上次匯出 ' + new Date(p.last_export).toLocaleDateString('zh-TW') : '未匯出'}
+    <div class="project-card${isCurrent ? ' current' : ''}" onclick="selectCard(${p.id},'${escapedName}')">
+      <div class="project-card-top">
+        <div class="project-info">
+          <div class="project-name">${p.name}${isCurrent ? ' <span class="badge badge-available">目前使用</span>' : ''}</div>
+          <div class="project-meta">
+            ${p.project_type === 'local_culture' ? '本土文化採購' : '一般圖書採購'} ·
+            定價欄：${p.price_field === 'purchase_price' ? '採購單價' : '定價'} ·
+            小計：${p.subtotal_mode === 'quantity_times_purchase_price' ? '數量×採購單價' : '數量×定價'}
+          </div>
         </div>
-        <div class="project-meta" style="margin-top:4px;font-size:12px;color:#999">
-          定價欄：${p.price_field === 'purchase_price' ? '採購單價' : '定價'} ·
-          小計：${p.subtotal_mode === 'quantity_times_purchase_price' ? '數量×採購單價' : '數量×定價'}
-        </div>
-        <div class="project-meta" style="margin-top:4px;font-size:12px;color:#666">
-          專案預算：${p.budget_amount != null ? `NT$ ${Math.round(p.budget_amount).toLocaleString('zh-TW')} 元` : '<span style="color:#999">未設定</span>'}
+        <div class="project-actions">
+          <button class="btn btn-primary btn-sm" onclick="selectProject(event,${p.id},'${escapedName}')">選擇</button>
+          <button class="btn btn-secondary btn-sm" onclick="openEdit(event,${p.id},'${escapedName}',${p.budget_amount},'${p.price_field}','${p.subtotal_mode}')">設定</button>
+          <button class="btn btn-danger-outline btn-sm" onclick="confirmDelete(event,${p.id},'${escapedName}')">刪除</button>
         </div>
       </div>
-      <div class="project-actions">
-        <button class="btn btn-primary btn-sm" onclick="selectProject(event,${p.id},'${p.name.replace(/'/g,"\\'")}')">選擇</button>
-        <button class="btn btn-secondary btn-sm" onclick="openEdit(event,${p.id},'${p.name.replace(/'/g,"\\'")}',${p.budget_amount},'${p.price_field}','${p.subtotal_mode}')">設定</button>
-        <button class="btn btn-danger-outline btn-sm" onclick="confirmDelete(event,${p.id},'${p.name.replace(/'/g,"\\'")}')">刪除</button>
+      <div class="project-card-status">
+        <div>${importRow}</div>
+        <div>${selRow}</div>
+        <div>${budgetRow}</div>
+        <div>${exportRow}</div>
+      </div>
+      <div class="project-card-nav">
+        <button class="btn btn-secondary btn-sm" onclick="goToStep(event,'/import.html',${p.id},'${escapedName}')">匯入</button>
+        <button class="btn btn-secondary btn-sm" onclick="goToStep(event,'/selection.html',${p.id},'${escapedName}')">選書</button>
+        <button class="btn btn-secondary btn-sm" onclick="goToStep(event,'/export-check.html',${p.id},'${escapedName}')">匯出前檢查</button>
+        <button class="btn btn-secondary btn-sm" onclick="goToStep(event,'/export.html',${p.id},'${escapedName}')">匯出 Excel</button>
       </div>
     </div>
   `; }).join('');
@@ -189,6 +227,12 @@ async function loadProjects() {
 function enterProject(id, name) {
   setProject(id, name);
   window.location.href = '/import.html';
+}
+
+function goToStep(event, url, id, name) {
+  event.stopPropagation();
+  setProject(id, name);
+  window.location.href = url;
 }
 
 function selectCard(id, name) {
