@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.auth import require_auth
 from app.database import get_connection
@@ -15,12 +15,26 @@ class ProjectCreate(BaseModel):
     price_field: str = "purchase_price"
     subtotal_mode: str = "quantity_times_purchase_price"
 
+    @field_validator("budget_amount")
+    @classmethod
+    def budget_non_negative(cls, v):
+        if v is not None and v < 0:
+            raise ValueError("budget_amount 不可為負數")
+        return v
+
 
 class ProjectUpdate(BaseModel):
     name: str | None = None
     budget_amount: float | None = None
     price_field: str | None = None
     subtotal_mode: str | None = None
+
+    @field_validator("budget_amount")
+    @classmethod
+    def budget_non_negative(cls, v):
+        if v is not None and v < 0:
+            raise ValueError("budget_amount 不可為負數")
+        return v
 
 
 @router.get("/")
@@ -92,7 +106,7 @@ async def update_project(
     updates = dict(existing)
     if body.name is not None:
         updates["name"] = body.name
-    if body.budget_amount is not None:
+    if "budget_amount" in body.model_fields_set:
         updates["budget_amount"] = body.budget_amount
     if body.price_field is not None:
         updates["price_field"] = body.price_field

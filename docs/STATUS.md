@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-project-budget-summary
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-06-23
 # Project Status
 
 ## Active Tasks
+
+- id: task-project-budget-summary
+  status: active
+  branch: feat/task-project-budget-summary
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-flow-stepper-nav
   status: done

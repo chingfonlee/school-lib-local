@@ -49,6 +49,12 @@
   </div>
 
   <div class="stats-row" id="stats-row"></div>
+
+  <div class="card" id="budget-summary-card" style="margin-bottom:8px">
+    <h3 style="margin:0 0 8px 0;font-size:14px;font-weight:600;color:#1d1d1f">金額摘要</h3>
+    <div id="budget-summary"></div>
+  </div>
+
   <div id="source-note" class="alert alert-info" style="display:none;margin-bottom:8px">
     部分書目的書商書單來源已清除，比對狀態以選書當時快照為準，不影響匯出準備度判斷。
   </div>
@@ -74,6 +80,7 @@
 <script src="/js/common.js"></script>
 <script>
 let pid = null;
+let proj = null;
 let lastCheck = null;
 let projectType = null;
 let bookDataMap = {};
@@ -93,7 +100,6 @@ const H_ALLOWED = [
 requireAuth().then(async () => {
   pid = getProjectId();
   if (!pid) { showToast('請先選擇採購專案'); return; }
-  let proj;
   try {
     proj = await api(`/api/projects/${pid}`);
   } catch {
@@ -122,8 +128,51 @@ async function runCheck() {
   renderStats(data);
   renderDetails(data.details);
   renderHint(data);
+  renderBudgetSummary(selData.items);
   const hasCleared = selData.items.some(s => !s.vendor_book_still_exists);
   document.getElementById('source-note').style.display = hasCleared ? 'block' : 'none';
+}
+
+function renderBudgetSummary(items) {
+  const el = document.getElementById('budget-summary');
+  if (!el) return;
+  const pf = document.getElementById('price-field').value;
+  const sm = document.getElementById('subtotal-mode').value;
+  const budget = proj && proj.budget_amount != null ? proj.budget_amount : null;
+  let totalListAmount = 0, totalPurchaseAmount = 0;
+  items.forEach(b => {
+    let ov = {};
+    try { ov = JSON.parse(b.user_overrides || '{}'); } catch { ov = {}; }
+    const lp = parseFloat(ov.list_price || b.list_price || 0) || 0;
+    const pp = parseFloat(ov.purchase_price || b.purchase_price || 0) || 0;
+    const qty = parseInt(b.selected_quantity || 0, 10);
+    totalListAmount += lp * qty;
+    totalPurchaseAmount += pp * qty;
+  });
+  const subtotalAmount = sm === 'quantity_times_list_price' ? totalListAmount : totalPurchaseAmount;
+  const fmt = n => Math.round(n).toLocaleString('zh-TW');
+  let diffHtml = '';
+  if (budget !== null) {
+    const diff = subtotalAmount - budget;
+    if (diff > 0) {
+      diffHtml = `<tr><td style="padding:4px 16px 4px 0;color:#666">與預算差額</td>
+        <td style="padding:4px 0;color:#c0392b;font-weight:600">超支 NT$ ${fmt(diff)} 元</td></tr>`;
+    } else {
+      diffHtml = `<tr><td style="padding:4px 16px 4px 0;color:#666">與預算差額</td>
+        <td style="padding:4px 0;color:#27ae60">剩餘 NT$ ${fmt(-diff)} 元</td></tr>`;
+    }
+  }
+  el.innerHTML = `<table style="width:auto;border:none;border-collapse:collapse">
+    <tr><td style="padding:4px 16px 4px 0;color:#666">專案預算</td>
+        <td style="padding:4px 0">${budget !== null ? `NT$ ${fmt(budget)} 元` : '<span style="color:#999">未設定</span>'}</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">定價總額</td>
+        <td style="padding:4px 0">NT$ ${fmt(totalListAmount)} 元</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">採購單價總額</td>
+        <td style="padding:4px 0">NT$ ${fmt(totalPurchaseAmount)} 元</td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#666">應付金額（${sm === 'quantity_times_list_price' ? '依定價' : '依採購單價'}）</td>
+        <td style="padding:4px 0;font-weight:600">NT$ ${fmt(subtotalAmount)} 元</td></tr>
+    ${diffHtml}
+  </table>`;
 }
 
 function renderStats(d) {
