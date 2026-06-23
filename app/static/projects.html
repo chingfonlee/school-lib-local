@@ -28,6 +28,14 @@
     <div class="right"><button class="btn btn-primary" onclick="showNewForm()">+ 新增專案</button></div>
   </div>
 
+  <div class="card" style="margin-bottom:16px;padding:16px 24px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-size:14px;color:#555;font-weight:600">資料庫管理</span>
+      <a href="/api/backup/database" class="btn btn-secondary btn-sm" onclick="handleBackupClick(event)">備份資料庫</a>
+      <button class="btn btn-secondary btn-sm" onclick="showRestoreModal()">還原資料庫</button>
+    </div>
+  </div>
+
   <div id="new-form" class="card" style="display:none">
     <h2>新增採購專案</h2>
     <div class="form-row">
@@ -103,6 +111,37 @@
       </div>
     </div>
   </div>
+
+  <!-- Delete confirm modal -->
+  <div id="delete-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:200;align-items:center;justify-content:center">
+    <div class="card" style="width:460px;margin:0">
+      <h2 style="color:#c0392b">確認刪除專案</h2>
+      <p>即將刪除專案：<strong id="delete-project-name"></strong></p>
+      <div id="delete-stats"></div>
+      <p style="color:#c0392b;font-size:13px;margin-top:8px">⚠ 刪除後無法復原，建議先備份資料庫。與此專案相關的所有資料（書目、選書、匯出紀錄）將永久刪除。</p>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button id="delete-confirm-btn" class="btn btn-danger">確認刪除</button>
+        <button class="btn btn-secondary" onclick="closeDeleteModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restore modal -->
+  <div id="restore-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:200;align-items:center;justify-content:center">
+    <div class="card" style="width:480px;margin:0">
+      <h2>還原資料庫</h2>
+      <p style="color:#e67e22;font-size:13px">⚠ 還原將覆蓋目前所有資料。系統將在還原前自動建立安全備份。</p>
+      <div class="form-group" style="margin-top:12px">
+        <label>選擇備份檔（.db）</label>
+        <input type="file" id="restore-file" accept=".db">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-danger" onclick="doRestore()">確認還原</button>
+        <button class="btn btn-secondary" onclick="closeRestoreModal()">取消</button>
+      </div>
+      <p id="restore-status" style="margin-top:8px;font-size:13px;color:#555"></p>
+    </div>
+  </div>
 </div>
 <div id="toast"></div>
 <script src="/js/common.js"></script>
@@ -138,6 +177,7 @@ async function loadProjects() {
       <div class="project-actions">
         <button class="btn btn-primary btn-sm" onclick="selectProject(${p.id},'${p.name.replace(/'/g,"\\'")}')">選擇</button>
         <button class="btn btn-secondary btn-sm" onclick="openEdit(${p.id},'${p.name.replace(/'/g,"\\'")}',${p.budget_amount},'${p.price_field}','${p.subtotal_mode}')">設定</button>
+        <button class="btn btn-danger-outline btn-sm" onclick="confirmDelete(${p.id},'${p.name.replace(/'/g,"\\'")}')">刪除</button>
       </div>
     </div>
   `).join('');
@@ -202,6 +242,93 @@ async function saveEdit() {
   closeEdit();
   showToast('已儲存');
   loadProjects();
+}
+
+// ---- 刪除 ----
+async function confirmDelete(id, name) {
+  const cur = getProjectId();
+  if (cur == id) {
+    showToast('請先選擇其他專案後再刪除此專案');
+    return;
+  }
+  let preview;
+  try {
+    preview = await api(`/api/projects/${id}/delete-preview`);
+  } catch (e) {
+    showToast('無法取得刪除預覽：' + e.message);
+    return;
+  }
+  document.getElementById('delete-project-name').textContent = preview.project_name;
+  document.getElementById('delete-stats').innerHTML = `
+    <ul style="margin:8px 0;padding-left:20px;color:#555;font-size:14px">
+      <li>選書項目：${preview.selection_count} 筆</li>
+      <li>匯出記錄：${preview.export_job_count} 筆</li>
+      <li>匯入批次：${preview.import_batch_count} 批</li>
+      <li>書商書目：${preview.vendor_book_count} 筆</li>
+      <li>館藏紀錄：${preview.holding_count} 筆</li>
+    </ul>`;
+  document.getElementById('delete-confirm-btn').onclick = () => doDelete(id);
+  document.getElementById('delete-modal').style.display = 'flex';
+}
+
+async function doDelete(id) {
+  document.getElementById('delete-modal').style.display = 'none';
+  try {
+    await api(`/api/projects/${id}`, { method: 'DELETE' });
+    if (getProjectId() == id) clearProject();
+    showToast('專案已刪除');
+    loadProjects();
+  } catch (e) {
+    showToast('刪除失敗：' + e.message);
+  }
+}
+
+function closeDeleteModal() {
+  document.getElementById('delete-modal').style.display = 'none';
+}
+
+// ---- 備份 ----
+function handleBackupClick() {
+  showToast('備份下載中...');
+}
+
+// ---- 還原 ----
+function showRestoreModal() {
+  document.getElementById('restore-file').value = '';
+  document.getElementById('restore-status').textContent = '';
+  document.getElementById('restore-modal').style.display = 'flex';
+}
+
+function closeRestoreModal() {
+  document.getElementById('restore-modal').style.display = 'none';
+}
+
+async function doRestore() {
+  const fileInput = document.getElementById('restore-file');
+  if (!fileInput.files.length) return showToast('請選擇備份檔');
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  document.getElementById('restore-status').textContent = '還原中，請稍候...';
+  try {
+    const res = await fetch('/api/backup/restore', {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: '未知錯誤' }));
+      document.getElementById('restore-status').textContent = '';
+      showToast('還原失敗：' + err.detail, 5000);
+      return;
+    }
+    const data = await res.json();
+    document.getElementById('restore-status').textContent = data.message;
+    showToast('還原成功！頁面即將重新整理', 4000);
+    setTimeout(() => location.reload(), 3000);
+  } catch (e) {
+    document.getElementById('restore-status').textContent = '';
+    showToast('還原失敗：' + e.message, 5000);
+  }
 }
 </script>
 </body>
