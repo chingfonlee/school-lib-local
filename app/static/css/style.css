@@ -2,7 +2,11 @@
 
 body {
   font-family: system-ui, -apple-system, "PingFang TC", "Noto Sans CJK TC", sans-serif;
-  background: #f5f5f7;
+  min-height: 100vh;
+  background:
+    linear-gradient(rgba(248, 249, 248, 0.5), rgba(248, 249, 248, 0.5)),
+    url("/img/library-procurement-bg.webp") center / cover fixed,
+    #f5f5f7;
   color: #1d1d1f;
   font-size: 15px;
   line-height: 1.5;
@@ -24,15 +28,31 @@ nav {
   display: flex; align-items: center; gap: 4px;
   padding: 10px 24px; max-width: 1100px; margin: 0 auto;
 }
-.nav-title { font-weight: 600; font-size: 16px; margin-right: 16px; white-space: nowrap; }
-.nav-steps { display: flex; gap: 2px; flex-wrap: wrap; flex: 1; }
+.nav-title { font-weight: 600; font-size: 16px; margin-right: 12px; white-space: nowrap; flex-shrink: 0; }
+.nav-steps { display: flex; gap: 0; flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; }
 .nav-steps a {
-  padding: 5px 12px; border-radius: 6px; font-size: 13px; color: #444;
-  transition: background 0.15s;
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 8px; border-radius: 6px; font-size: 13px; color: #555;
+  white-space: nowrap; text-decoration: none; transition: background 0.15s;
 }
-.nav-steps a:hover, .nav-steps a.active { background: #e8e8ed; color: #1d1d1f; text-decoration: none; }
-.nav-steps a.active { font-weight: 600; }
-.nav-right { margin-left: auto; font-size: 13px; color: #666; }
+.nav-steps a:hover { background: #f0f0f5; text-decoration: none; }
+.nav-steps a:not(:last-child)::after { content: "›"; color: #c8c8cd; margin-left: 2px; font-size: 14px; }
+.step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  font-size: 11px; font-weight: 600;
+  background: #d2d2d7; color: #555; flex-shrink: 0;
+}
+.nav-steps a.active { color: #1d1d1f; font-weight: 600; }
+.nav-steps a.active .step-num { background: #0071e3; color: #fff; }
+.nav-tool {
+  padding: 5px 10px; font-size: 13px; color: #888;
+  border-left: 1px solid #d2d2d7; margin-left: 4px;
+  white-space: nowrap; flex-shrink: 0; text-decoration: none;
+}
+.nav-tool:hover { color: #444; text-decoration: none; }
+.nav-tool.active { color: #0071e3; font-weight: 600; }
+.nav-right { margin-left: auto; font-size: 13px; color: #666; flex-shrink: 0; }
 .nav-right a { color: #0071e3; }
 
 /* Page */
@@ -43,7 +63,7 @@ h2 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
 
 /* Card */
 .card {
-  background: #fff; border-radius: 12px;
+  background: rgba(255,255,255,0.96); border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   padding: 24px; margin-bottom: 20px;
 }
