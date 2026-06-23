@@ -151,7 +151,7 @@ el.innerHTML = projects.map(p => {
 
 ---
 
-### Step 3：新增 `goToStep` helper
+### Step 3：新增 `goToStep` helper，並調整卡片主體預設入口
 
 **檔案**: `app/static/projects.html`
 
@@ -164,6 +164,8 @@ function goToStep(event, url, id, name) {
   window.location.href = url;
 }
 ```
+
+並將 `enterProject()` 的預設導向調整為 `/selection.html`，讓卡片主體與 [選擇] 按鈕進入高頻使用的選書頁；[匯入] 快速按鈕仍保留導向 `/import.html`。
 
 ---
 
@@ -271,4 +273,4 @@ def test_list_projects_selection_amount_uses_subtotal_mode(auth_client, project_
 - [ ] Step 3：`goToStep` 正確 stopPropagation 並導頁
 - [ ] Step 4：卡片 column layout 正常，`::before` guide bar 不受影響
 - [ ] Step 5：pytest 全部通過（現有 58 + 新增至少 1）
-- [ ] 手動驗收：5 個驗收場景（尚未匯入 / 有館藏重複 / 有預算使用 / 四種按鈕 / card click 仍正常）
+- [ ] 手動驗收：5 個驗收場景（尚未匯入 / 有館藏重複 / 有預算使用 / 四種按鈕 / card click 導向選書頁）

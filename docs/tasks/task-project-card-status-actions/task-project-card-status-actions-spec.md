@@ -282,7 +282,7 @@ function goToStep(event, url, id, name) {
 | 點擊 [選書] 按鈕 | `setProject` + 導向 `/selection.html` |
 | 點擊 [匯出前檢查] 按鈕 | `setProject` + 導向 `/export-check.html` |
 | 點擊 [匯出 Excel] 按鈕 | `setProject` + 導向 `/export.html`（不直接執行匯出） |
-| 點擊卡片主體 | 與 task-project-card-actions 相同，`setProject` + 導向 `/import.html` |
+| 點擊卡片主體 | `setProject` + 導向 `/selection.html`（匯入通常只做一次，選書是高頻入口） |
 | subtotal_mode = quantity_times_list_price | selection_amount 使用 `list_price` 計算 |
 | subtotal_mode = quantity_times_purchase_price | selection_amount 使用 `purchase_price` 計算 |
 | `selection_amount` = 0 | 小計仍顯示（"小計 NT$ 0 元"），不當作空值 |
