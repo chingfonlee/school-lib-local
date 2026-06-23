@@ -234,9 +234,27 @@ tr:last-child td { border-bottom: none; }
   box-shadow: 0 1px 3px rgba(0,0,0,0.07);
   display: flex; align-items: center; gap: 16px; margin-bottom: 12px;
   cursor: pointer;
-  transition: box-shadow 0.15s;
+  position: relative;
+  border: 1px solid rgba(0,0,0,0.04);
+  transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
 }
-.project-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+.project-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 16px; bottom: 16px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: transparent;
+  transition: background 0.15s;
+}
+.project-card:hover {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  transform: translateY(-1px);
+  border-color: rgba(0,113,227,0.2);
+}
+.project-card:hover::before { background: #0071e3; }
+.project-card.current { border-color: rgba(0,113,227,0.22); }
+.project-card.current::before { background: #0071e3; }
 .project-card .project-name { font-size: 16px; font-weight: 600; }
 .project-card .project-meta { font-size: 13px; color: #6e6e73; margin-top: 2px; }
 .project-card .project-actions { margin-left: auto; display: flex; gap: 8px; }
