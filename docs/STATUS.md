@@ -1,10 +1,10 @@
 ---
 session_state: open
-current_action: executing
+current_action: task-close
 current_task: task-project-card-actions
-planning_task: ""
-planning_type: ""
-planning_base_branch: ""
+planning_task: task-project-card-status-actions
+planning_type: feat
+planning_base_branch: main
 last_agent: claude
 updated: 2026-06-23
 ---
@@ -12,6 +12,13 @@ updated: 2026-06-23
 # Project Status
 
 ## Active Tasks
+
+- id: task-project-card-status-actions
+  status: planning
+  branch: feat/task-project-card-status-actions
+  base_branch: main
+  last_log: ""
+  last_agent: claude
 
 - id: task-project-card-actions
   status: active
