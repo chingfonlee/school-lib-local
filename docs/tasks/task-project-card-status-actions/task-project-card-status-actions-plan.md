@@ -256,6 +256,64 @@ def test_list_projects_selection_amount_uses_subtotal_mode(auth_client, project_
 
 ---
 
+### Step 6：根網址 redirect 與登入後導向
+
+#### Step 6a：確認現有根網址行為
+
+`main.py` 第 35 行：`app.mount("/", StaticFiles(directory="app/static", html=True), name="static")`
+
+`html=True` 讓 Starlette 在存取目錄時回傳 `index.html`，因此 `GET /` 目前載入 `app/static/index.html`。
+
+#### Step 6b：決定最小改法（採用 Option B）
+
+| 選項 | 做法 | 優缺點 |
+|------|------|--------|
+| A | 將 `app/static/index.html` 改成極簡 redirect 頁（meta refresh / JS）| 無需改 Python；但需搬移或覆蓋原有 `index.html` 內容，且為 HTML 層 redirect（兩跳） |
+| B | 在 `StaticFiles` mount 前新增 FastAPI 根路由 `@app.get("/")` 回傳 HTTP redirect | HTTP 層 redirect（單跳）；`/index.html` 原始內容保留不動；FastAPI route 優先於 mount 攔截 `GET /` |
+
+**選擇 Option B**：HTTP redirect 語意正確、`index.html` 保留不動、改動最集中（僅 `main.py` 一處）。
+
+**檔案**：`app/main.py`
+
+在 `StaticFiles` mount 之前新增（建議使用 302 讓瀏覽器不快取）：
+
+```python
+from fastapi.responses import RedirectResponse
+
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse(url="/projects.html", status_code=302)
+```
+
+#### Step 6c：修改登入後導向
+
+**檔案**：`app/static/login.html`
+
+找到兩處 `window.location.href = '/index.html'`（第 57 行、第 66 行），改為 `/projects.html`。
+
+#### Step 6d：驗證
+
+1. 啟動 `uvicorn`。
+2. 未登入開啟 `/`：確認 redirect 至 `/projects.html`，`requireAuth` 觸發導向 `login.html`（現有行為不變）。
+3. 登入後開啟 `/`：確認 redirect 至 `/projects.html` 並正常顯示採購專案列表。
+4. 登入成功後：確認導向 `/projects.html`，不進入 `/index.html`。
+5. 直接開啟 `/index.html`：確認舊儀表板仍正常顯示。
+
+#### Step 6e：測試
+
+本次為靜態頁 redirect 與單一 Python 路由新增，手動瀏覽器驗證即可。若補自動化測試，可新增：
+
+```python
+def test_root_redirects_to_projects(client):
+    resp = client.get("/", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/projects.html"
+```
+
+依現有 `conftest.py` 的 fixture 名稱調整（不強制補；若既有測試架構有 `client` fixture 則補上）。
+
+---
+
 ## 實作順序
 
 1. Step 1（API）→ pytest 確認 58 passed（或更多）
@@ -263,6 +321,7 @@ def test_list_projects_selection_amount_uses_subtotal_mode(auth_client, project_
 3. Step 3（goToStep）→ 點擊按鈕確認導頁不觸發 card onclick
 4. Step 4（CSS）→ 視覺確認 column layout 正常
 5. Step 5（測試）→ 補全並執行 pytest
+6. Step 6（入口導向）→ 驗證根網址 redirect 與登入後導向
 
 ---
 
@@ -274,3 +333,6 @@ def test_list_projects_selection_amount_uses_subtotal_mode(auth_client, project_
 - [ ] Step 4：卡片 column layout 正常，`::before` guide bar 不受影響
 - [ ] Step 5：pytest 全部通過（現有 58 + 新增至少 1）
 - [ ] 手動驗收：5 個驗收場景（尚未匯入 / 有館藏重複 / 有預算使用 / 四種按鈕 / card click 導向選書頁）
+- [ ] Step 6：`GET /` 回傳 HTTP 302 redirect 至 `/projects.html`
+- [ ] Step 6：`login.html` 登入成功後導向 `/projects.html`（兩處均改）
+- [ ] Step 6：直接開啟 `/index.html` 仍正常顯示

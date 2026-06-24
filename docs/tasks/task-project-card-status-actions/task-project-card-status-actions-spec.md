@@ -23,12 +23,15 @@
 
 此外，進入任何工作步驟都需先點卡片（導向匯入頁），再從 stepper 導航到目的頁。若使用者已知道要繼續選書或匯出，無法直接跳步。
 
+此外，目前使用者開啟系統根網址 `http://127.0.0.1:8765/` 或登入成功後，均進入 `index.html`（舊儀表板首頁），而非採購專案列表頁。使用者必須手動導向 `projects.html` 才能開始工作，增加不必要步驟。
+
 ---
 
 ## 使用者目標
 
 1. 在專案列表頁直接看到每個專案的工作進度摘要（匯入、比對、選書、預算、匯出）。
 2. 透過快速操作按鈕，一鍵選定專案並跳轉至指定的工作步驟（匯入、選書、匯出前檢查、匯出）。
+3. 開啟系統後直接進入採購專案頁面，從此選擇專案並進入工作步驟，無需手動導頁。
 
 ---
 
@@ -209,6 +212,28 @@ function goToStep(event, url, id, name) {
 
 ---
 
+## 需求四：系統入口導向採購專案頁
+
+### 根網址行為
+
+開啟 `http://127.0.0.1:8765/`（或 `/`）時，應導向 `/projects.html`。
+
+目前架構：`main.py` 以 `StaticFiles(directory="app/static", html=True)` 掛載 `/`，`GET /` 因 `html=True` 回傳 `app/static/index.html`。最小改法為在 `StaticFiles` mount 之前新增 FastAPI 根路由 redirect，讓 `GET /` 回傳 HTTP redirect 至 `/projects.html`，不影響 `/index.html` 的靜態服務。
+
+### 登入後導向
+
+`login.html` 登入成功後執行 `window.location.href = '/index.html'`（兩處，第 57 行與第 66 行），改為 `/projects.html`。
+
+### `index.html` 保留
+
+`index.html` 不刪除、不破壞原有內容，仍可透過 `/index.html` 直接存取（作為舊儀表板保留）。
+
+### `start.bat`（不修改）
+
+`start.bat` 目前開啟根網址，根網址 redirect 後已自動進入 `projects.html`，不需修改。
+
+---
+
 ## CSS 變更
 
 ### 調整 `.project-card`
@@ -283,6 +308,10 @@ function goToStep(event, url, id, name) {
 | 點擊 [匯出前檢查] 按鈕 | `setProject` + 導向 `/export-check.html` |
 | 點擊 [匯出 Excel] 按鈕 | `setProject` + 導向 `/export.html`（不直接執行匯出） |
 | 點擊卡片主體 | `setProject` + 導向 `/selection.html`（匯入通常只做一次，選書是高頻入口） |
+| 未登入開啟 `/` | redirect 至 `/projects.html`，`requireAuth` 依現有行為導向 `login.html` |
+| 登入後開啟 `/` | redirect 至 `/projects.html`，正常顯示採購專案列表 |
+| 登入成功後 | 導向 `/projects.html`，不再進入 `/index.html` |
+| 直接開啟 `/index.html` | 舊儀表板正常顯示，不因本次調整壞掉 |
 | subtotal_mode = quantity_times_list_price | selection_amount 使用 `list_price` 計算 |
 | subtotal_mode = quantity_times_purchase_price | selection_amount 使用 `purchase_price` 計算 |
 | `selection_amount` = 0 | 小計仍顯示（"小計 NT$ 0 元"），不當作空值 |
@@ -292,6 +321,8 @@ function goToStep(event, url, id, name) {
 ## 非目標
 
 - 不在卡片直接觸發 Excel 匯出（[匯出 Excel] 按鈕只導頁，不呼叫 API）。
+- 不重做 `index.html` 的內容；舊首頁保留，僅透過根路由 redirect 繞過。
+- 不移除 `index.html`（`/index.html` 仍可直接存取）。
 - 不修改資料庫 schema，不新增 migration。
 - 不新增獨立 summary API endpoint。
 - 不做每個步驟的「完成」狀態標記（勾號或進度條）。
