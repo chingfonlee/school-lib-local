@@ -1,7 +1,7 @@
 ---
-session_state: open
-current_action: task-close
-current_task: task-general-books-user-guide
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -14,10 +14,10 @@ updated: 2026-06-24
 ## Active Tasks
 
 - id: task-general-books-user-guide
-  status: active
-  branch: chore/task-general-books-user-guide
+  status: done
+  branch: ""
   base_branch: main
-  last_log: ""
+  last_log: 2026-06-24-163508.md
   last_agent: claude
 
 - id: task-project-card-status-actions
