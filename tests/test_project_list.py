@@ -1,4 +1,15 @@
-"""Tests for project list summary fields."""
+"""Tests for project list summary fields and root redirect."""
+
+from starlette.testclient import TestClient
+from app.main import app
+
+
+def test_root_redirects_to_projects():
+    """GET / should redirect to /projects.html (HTTP 302)."""
+    client = TestClient(app, raise_server_exceptions=True)
+    resp = client.get("/", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/projects.html"
 
 
 def _project_by_id(projects, project_id):
