@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -30,6 +31,11 @@ async def startup():
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse(url="/projects.html", status_code=302)
 
 
 app.mount("/", StaticFiles(directory="app/static", html=True), name="static")

@@ -54,7 +54,7 @@ async function doLogin() {
       alert.style.display = 'block';
       return;
     }
-    window.location.href = '/index.html';
+    window.location.href = '/projects.html';
   } catch {
     alert.textContent = '連線失敗，請確認系統已啟動';
     alert.style.display = 'block';
@@ -63,7 +63,7 @@ async function doLogin() {
 
 waitReady().then(() => {
   fetch('/api/auth/me').then(r => {
-    if (r.ok) window.location.href = '/index.html';
+    if (r.ok) window.location.href = '/projects.html';
   });
 });
 </script>
