@@ -16,7 +16,7 @@
 ## 支援範圍
 
 - **本土文化採購**：主要功能，包含館藏比對、選書、A 欄資格標記、H 欄推薦來源、匯出採購書單
-- **一般圖書採購**：目前支援，詳細操作指南待後續補充
+- **一般圖書採購**：目前支援，詳細操作流程請見 [一般圖書採購快速上手](docs/user-guide/general-books-quickstart.md)
 
 ## 本地資料安全
 
@@ -49,3 +49,4 @@
 
 - [Windows 安裝指南](docs/user-guide/install-windows.md)
 - [本土文化採購快速上手](docs/user-guide/local-culture-quickstart.md)
+- [一般圖書採購快速上手](docs/user-guide/general-books-quickstart.md)
