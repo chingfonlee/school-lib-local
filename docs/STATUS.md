@@ -1,17 +1,24 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-open-source-readiness
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
 last_agent: claude
-updated: 2026-06-24
+updated: 2026-06-25
 ---
 
 # Project Status
 
 ## Active Tasks
+
+- id: task-open-source-readiness
+  status: active
+  branch: chore/task-open-source-readiness
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-general-books-user-guide
   status: done
