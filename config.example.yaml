@@ -1,3 +1,18 @@
+# =============================================================================
+# config.example.yaml — 設定範本
+#
+# 使用方式：
+#   複製此檔案為 config.yaml，再依說明填入正確值。
+#   Windows: copy config.example.yaml config.yaml
+#   macOS/Linux: cp config.example.yaml config.yaml
+#
+# 安全提醒：
+#   - config.yaml 已列入 .gitignore，不會被提交至版本控制
+#   - 務必將 auth.default_admin_password 改為強密碼
+#   - 務必將 auth.session_secret_key 改為隨機產生的長字串
+#     （例如執行：python -c "import secrets; print(secrets.token_hex(32))"）
+# =============================================================================
+
 server:
   host: "127.0.0.1"
   port: 8765
@@ -7,8 +22,8 @@ database:
 
 auth:
   default_admin_username: "admin"
-  default_admin_password: "changeme"
-  session_secret_key: "please-change-this-to-a-random-string"
+  default_admin_password: "<change-me>"
+  session_secret_key: "<generate-a-random-secret>"
 
 source:
   local_culture_export_template: "./00_source/高雄市115年度○○區○○國小圖書館（室）充實本土文化相關圖書採購書單(空白).xlsx"
@@ -62,6 +77,6 @@ export_templates:
       award_notes: "L"
 
 default_project:
-  name: "115年度本土文化採購"
+  name: "115年度採購"
   project_type: "local_culture"
   export_template_name: "local_culture_kaohsiung_115"

@@ -1,6 +1,11 @@
 # Runtime data — do not commit
 data/
 exports/
+tmp/
+*.log
+
+# Config — copy config.example.yaml to config.yaml and fill in your values
+config.yaml
 
 # Python
 .venv/
