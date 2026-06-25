@@ -21,6 +21,22 @@
 - **下載 ZIP**：在 GitHub 頁面點選「Code」→「Download ZIP」，解壓縮至任意資料夾
 - **git clone**：若已安裝 Git，在終端機執行 `git clone <專案網址>`
 
+## 建立設定檔
+
+取得專案後，啟動前請先建立本機設定檔：
+
+1. 將 `config.example.yaml` 複製為 `config.yaml`：
+
+   ```
+   copy config.example.yaml config.yaml
+   ```
+
+2. 開啟 `config.yaml`，修改以下欄位：
+   - `auth.default_admin_password`：設定登入密碼
+   - `auth.session_secret_key`：設定為隨機長字串（例如執行 `python -c "import secrets; print(secrets.token_hex(32))"` 產生）
+
+> `config.yaml` 為本機設定檔，已加入 `.gitignore`，不應提交至版本控制。
+
 ## 首次啟動
 
 1. 開啟專案資料夾
@@ -41,14 +57,9 @@
 
 ## 登入帳號
 
-預設登入資訊請查看 `config.yaml` 的 `auth` 區塊（`default_admin_username`、`default_admin_password`）。
+使用您在「建立設定檔」步驟中於 `config.yaml` 設定的帳號（`default_admin_username`，預設為 `admin`）與密碼（`default_admin_password`）登入。
 
-**首次使用後請立即修改：**
-
-- 開啟專案資料夾內的 `config.yaml`，修改 `default_admin_password` 為自訂密碼
-- 同時將 `session_secret_key` 改為隨機字串（例如鍵盤隨機輸入的長字串）
-
-> 若未修改預設密碼與 `session_secret_key`，系統安全性較低，不建議在多人共用網路環境下使用。
+> 若尚未修改 `config.yaml` 的 `default_admin_password` 與 `session_secret_key`，請先完成「建立設定檔」步驟再啟動系統。未修改時系統安全性較低，不建議在多人共用網路環境下使用。
 
 ## 資料與匯出位置
 
