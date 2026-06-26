@@ -65,13 +65,13 @@
 
 ## 開源風險與注意事項
 
-1. **憑證風險（高）**：`config.yaml` 目前被追蹤，含 `default_admin_password: "changeme"` 與 `session_secret_key: "please-change-this-to-a-random-string"`。若直接 clone 並用預設值部署，任何人均可用 `admin/changeme` 登入。`git rm --cached` 後仍需確認 git history 中無更嚴重的真實密碼。
+1. **憑證風險（已解除）**：`config.yaml` 已從 git 追蹤移除（Phase 1），`config.example.yaml` 使用明顯 placeholder（`<change-me>`、`<generate-a-random-secret>`）。Phase 6 敏感資料掃描通過，無真實密碼或 token 殘留於已追蹤檔案中。git history 仍含舊版 `config.yaml`（佔位值 `changeme`），本次任務不重寫 history，風險可接受。
 
 2. **學校特定路徑外洩**：`config.yaml` 與 `config.example.yaml` 中的 `source.local_culture_export_template` 路徑含有「高雄市 115 年度○○區○○國小」字樣，屬佔位值，需確認公開後是否可接受。
 
 3. **靜態資產（已解除）**：`app/static/img/library-procurement-bg.webp` 為 AI 生成素材，已確認可納入公開 repo 並以 MIT License 發布，不再有授權疑慮。
 
-4. **AI 工作流程文件內容審查（低）**：`AGENTS.md`、`CLAUDE.md`、`.claude/`、`docs/tasks/`、`docs/logs/` 已決定保留在公開 repo，不預期含有安全敏感資料，但仍需執行一次內容掃描確認。`README.md` 說明這些為開發流程記錄可降低使用者困惑。
+4. **AI 工作流程文件內容審查（已完成）**：Phase 6 使用 `git grep` 掃描所有追蹤檔案，含 `AGENTS.md`、`CLAUDE.md`、`.claude/`、`docs/tasks/`、`docs/logs/`。唯一需確認項目為 `docs/tasks/task-local-cultural-books-mvp/task-local-cultural-books-mvp-plan.md` 中的歷史佔位值（`"changeme"`、`"please-change-this-to-a-random-string"`），已確認為已完成任務的設計草稿，非真實憑證，使用者決定保留。掃描結論：無需修正。
 
 5. **git history 掃描**：本次任務限於移除 `config.yaml` 的現有追蹤，不涉及重寫 git history。若 config.yaml 歷史中有真實密碼，需另行評估 `git filter-repo`。
 

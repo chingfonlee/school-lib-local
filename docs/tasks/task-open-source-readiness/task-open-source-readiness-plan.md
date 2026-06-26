@@ -55,21 +55,78 @@
 
 ### Phase 6：敏感資料與公開內容掃描
 
-18. 執行以下掃描，對象為 git 追蹤檔案（排除 `.venv/`）：
+18. 執行掃描，對象為 git 追蹤檔案：
     ```
-    rg -n "password|secret|token|api[_-]?key|changeme|please-change|C:\\|Users\\" -S --glob "!.venv" .
+    git grep -n -I -E "password|secret|token|api[_-]?key|changeme|please-change|C:\\|Users\\" -- .
     ```
-19. 人工確認每一個命中結果：
-    - `config.example.yaml` 中的 placeholder 為預期結果，確認格式為 `<change-me>` 類型
-    - `start.bat` 中的 `session_secret_key` 提醒訊息為預期結果
-    - `AGENTS.md`、`.claude/`、`docs/tasks/`、`docs/logs/` 若有命中，逐一確認是否為真實憑證或佔位說明
-    - 若發現非預期的真實密碼、token 或個資：停止，回報使用者，不自行刪改
+    （`rg` 在本機 PowerShell PATH 中不可用，以 `git grep` 替代；掃描範圍自動限於已追蹤檔案，無需額外排除 `.venv/`）
+
+19. 人工確認命中結果——**Phase 6 已完成（2026-06-26）**，結論如下：
+
+    **OK（無風險）：**
+    - `app/` 原始碼：欄位名稱（`password_hash`、`session_secret_key`）、bcrypt 操作、HTML 表單欄位
+    - `config.example.yaml`：`<change-me>`、`<generate-a-random-secret>` placeholder
+    - `README.md`、`CONTRIBUTING.md`、`SECURITY.md`、`docs/user-guide/install-windows.md`：操作說明文字，無實際值
+    - `start.bat`：使用者提醒訊息
+    - `migrations/001_initial_schema.sql`：SQL schema 欄位 `password_hash`
+    - `docs/tasks/task-project-budget-summary/...-plan.md`：`session=<token>` 為 curl 測試 placeholder
+    - 其餘 `docs/tasks/`、`docs/logs/` 命中：任務描述與規則說明脈絡
+
+    **需確認（已確認可保留）：**
+    - `docs/tasks/task-local-cultural-books-mvp/task-local-cultural-books-mvp-plan.md:639-640`：
+      歷史設計草稿中含 `default_admin_password: "changeme"` 與 `session_secret_key: "please-change-this-to-a-random-string"`
+      → 使用者已確認可保留。理由：已完成任務的歷史記錄，非真實憑證；`config.yaml` 已不追蹤；公開流程已改用 `config.example.yaml`
+
+    **需修正：無**
+
+    **Phase 6 結論：passed。No sensitive secrets requiring remediation.**
 
 ### Phase 7：驗證與交付確認
 
-20. 執行驗證命令清單（見下方 `## 驗證指令`），逐項確認通過
-21. 確認所有變更已 commit
-22. 向使用者回報完成情況
+20. 執行以下驗證命令，逐項確認通過：
+
+    **a. Working tree 與 branch 確認**
+    ```
+    git status --short          # 應無輸出（working tree 乾淨）
+    git branch --show-current   # 應為 chore/task-open-source-readiness
+    ```
+
+    **b. 追蹤檔案清單確認**
+    ```
+    git ls-files config.yaml config.example.yaml .gitignore LICENSE README.md \
+      CONTRIBUTING.md SECURITY.md .github/workflows/ci.yml \
+      app/static/img/library-procurement-bg.webp
+    ```
+    - `config.yaml` → 無輸出（不追蹤）
+    - `config.example.yaml`、`.gitignore`、`LICENSE`、`README.md`、`CONTRIBUTING.md`、`SECURITY.md`、`.github/workflows/ci.yml`、`app/static/img/library-procurement-bg.webp` → 全部有輸出（已追蹤）
+
+    **c. 不追蹤目錄確認**
+    ```
+    git ls-files data/ exports/ 00_source/ tmp/ config.yaml
+    ```
+    應無輸出。
+
+    **d. 敏感資料最終掃描**
+    ```
+    git grep -n -I -E "password|secret|token|api[_-]?key|changeme|please-change|C:\\|Users\\" -- .
+    ```
+    確認無新增的非預期命中（對照 Phase 6 已確認清單）。
+
+    **e. 測試**
+    ```
+    .venv\Scripts\python.exe -m pytest -q
+    ```
+    應全部通過（63 passed 或以上）。
+
+    **f. 文件內容確認（人工）**
+    - `README.md` 包含：MIT License 聲明、`config.example.yaml` → `config.yaml` 步驟、安全提醒、`.gitignore` 排除說明
+    - `.github/workflows/ci.yml` matrix 使用 Python `"3.11"` 與 `"3.12"`，steps 含 `cp config.example.yaml config.yaml` 與 `pytest -q`
+
+    **g. 手動確認（可選）**
+    - Windows `start.bat` 雙擊可啟動，瀏覽器開啟 `http://127.0.0.1:8765`
+
+21. 確認所有變更已 commit，working tree 乾淨
+22. 向使用者回報完成情況，等待確認後進入 task-close 流程
 
 ## 風險與注意事項
 
