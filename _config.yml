@@ -1,0 +1,47 @@
+title: 國小圖書館採購輔助系統
+description: 協助國小完成書商書單比對、選書與採購書單匯出
+lang: zh-TW
+url: "https://chingfonlee.github.io"
+baseurl: "/school-lib-local"
+
+theme: minima
+
+# 保持目錄結構，讓截圖相對路徑正確解析
+permalink: /:path:output_ext
+
+plugins:
+  - jekyll-optional-front-matter   # 允許無 front matter 的 .md 檔作為頁面
+  - jekyll-relative-links          # 將內部 .md 連結自動轉換為 .html
+  - jekyll-titles-from-headings    # 從第一個 # 標題自動設定頁面標題
+
+# 導覽列只顯示使用者指南索引
+header_pages:
+  - docs/user-guide/index.md
+
+# 所有頁面套用 page 版型
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: page
+
+# 排除開發工具、AI 工作流程、原始程式碼
+exclude:
+  - .venv/
+  - .claude/
+  - .gemini/
+  - AGENTS.md
+  - CLAUDE.md
+  - docs/STATUS.md
+  - docs/PROJECT_RULES.md
+  - docs/BACKLOG.md
+  - docs/tasks/
+  - docs/logs/
+  - app/
+  - tests/
+  - scripts/
+  - sample-data/
+  - data/
+  - exports/
+  - 00_source/
+  - tmp/
