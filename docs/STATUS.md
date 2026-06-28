@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-user-guide-with-screenshots
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-06-28
 # Project Status
 
 ## Active Tasks
+
+- id: task-user-guide-with-screenshots
+  status: active
+  branch: chore/task-user-guide-with-screenshots
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-add-sample-vendor-lists
   status: done
