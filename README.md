@@ -58,6 +58,19 @@ copy config.example.yaml config.yaml
 
 詳細安裝說明請見 [Windows 安裝指南](docs/user-guide/install-windows.md)。
 
+## 範例書單 / Sample Data
+
+`sample-data/vendor-lists/` 目錄包含兩份範例書商書單，clone 後可直接用於測試：
+
+| 檔案 | 說明 |
+|------|------|
+| `general-books-required-recommended-2026.xlsx` | 一般圖書採購推薦書目（約 6,750 筆） |
+| `local-culture-vendor-list-2026.xlsx` | 本土文化圖書採購推薦書目（約 679 筆） |
+
+這兩份 Excel 是**範例書商書單（推薦書目清單）**，不是學校館藏資料。clone 後可在「匯入書商書單」步驟直接選用，無需自備書單即可體驗完整採購流程。
+
+> 實際採購請使用書商提供的最新書單。範例書單的書目資訊之權利歸各原權利人或資料來源所有，詳見 [`sample-data/vendor-lists/README.md`](sample-data/vendor-lists/README.md)。
+
 ## 本地資料安全
 
 - 所有採購資料、館藏記錄、書商書單均儲存於本機 `data/school_lib.db`
