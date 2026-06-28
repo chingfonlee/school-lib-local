@@ -29,23 +29,25 @@
 | 項目 | 需求 |
 |------|------|
 | 作業系統 | Windows 10 / Windows 11 |
-| Python | 3.10 至 3.13（不支援 3.14） |
+| Python | 3.10 至 3.13（不支援 3.14）—— 攜帶版不需要 |
 | 瀏覽器 | Chrome 或 Edge（建議） |
 
 ## 快速開始
 
-### 1. 安裝 Python
+### 攜帶版（推薦，不需安裝 Python）
 
-若尚未安裝，請至 [python.org](https://www.python.org/downloads/) 下載 Python 3.12，安裝時請勾選「**Add Python to PATH**」。
+1. 至 [Releases 頁面](https://github.com/chingfonlee/school-lib-local/releases/latest) 下載 **`school-lib-portable.zip`**
+2. 解壓縮至任意資料夾
+3. 雙擊 `start.bat`，首次啟動輸入登入密碼
+4. 瀏覽器自動開啟，以 `admin` 帳號登入
 
-### 2. 啟動系統
+### 自行安裝版（已有 Python）
 
-1. 雙擊 `start.bat`
-2. 首次執行時，系統自動安裝必要套件（需等待數分鐘）
-3. 出現「請設定管理員登入密碼」提示時，輸入密碼並按 Enter
-4. 瀏覽器自動開啟 `http://127.0.0.1:8765`，以 `admin` 帳號與剛設定的密碼登入
+1. 安裝 [Python 3.12](https://www.python.org/downloads/)，勾選「**Add Python to PATH**」
+2. 下載 ZIP 或 `git clone` 本 repo
+3. 雙擊 `start.bat`，首次啟動輸入登入密碼
 
-詳細安裝說明請見 [Windows 安裝指南](docs/user-guide/install-windows.md)。
+詳細說明請見 [Windows 安裝指南](docs/user-guide/install-windows.md)。
 
 ## 範例書單 / Sample Data
 
