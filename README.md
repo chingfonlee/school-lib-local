@@ -124,6 +124,7 @@ copy config.example.yaml config.yaml
 
 ## 文件
 
+- [完整操作導覽（含截圖）](docs/user-guide/complete-walkthrough.md)
 - [Windows 安裝指南](docs/user-guide/install-windows.md)
 - [本土文化採購快速上手](docs/user-guide/local-culture-quickstart.md)
 - [一般圖書採購快速上手](docs/user-guide/general-books-quickstart.md)
