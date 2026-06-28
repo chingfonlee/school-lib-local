@@ -34,27 +34,16 @@
 
 ## 快速開始
 
-### 1. 建立設定檔
+### 1. 安裝 Python
 
-clone 或解壓縮專案後，先建立本機設定檔：
-
-```
-copy config.example.yaml config.yaml
-```
-
-開啟 `config.yaml`，修改以下欄位再啟動：
-
-- `auth.default_admin_password`：設定登入密碼
-- `auth.session_secret_key`：設定為隨機長字串
-
-> `config.yaml` 為本機設定檔，已加入 `.gitignore`，不會被提交至版本控制。
+若尚未安裝，請至 [python.org](https://www.python.org/downloads/) 下載 Python 3.12，安裝時請勾選「**Add Python to PATH**」。
 
 ### 2. 啟動系統
 
 1. 雙擊 `start.bat`
-2. 首次執行時，系統會自動安裝必要套件（需等待數分鐘）
-3. 安裝完成後，瀏覽器自動開啟 `http://127.0.0.1:8765`
-4. 使用 `config.yaml` 中設定的帳號密碼登入
+2. 首次執行時，系統自動安裝必要套件（需等待數分鐘）
+3. 出現「請設定管理員登入密碼」提示時，輸入密碼並按 Enter
+4. 瀏覽器自動開啟 `http://127.0.0.1:8765`，以 `admin` 帳號與剛設定的密碼登入
 
 詳細安裝說明請見 [Windows 安裝指南](docs/user-guide/install-windows.md)。
 

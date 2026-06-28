@@ -22,6 +22,7 @@ if %errorlevel% equ 0 (
 
 if "%PYTHON_CMD%"=="" (
     echo [錯誤] 找不到 Python，請先安裝 Python 3.10 或以上版本。
+    echo 請至 https://www.python.org/downloads/ 下載，安裝時請勾選「Add Python to PATH」。
     pause
     exit /b 1
 )
@@ -30,14 +31,14 @@ for /f "tokens=2" %%v in ('%PYTHON_CMD% --version 2^>^&1') do set "PYTHON_VERSIO
 echo 使用 Python %PYTHON_VERSION%
 echo %PYTHON_VERSION% | findstr /b "3.14" >nul
 if %errorlevel% equ 0 (
-    echo [錯誤] 偵測到 Python 3.14 預覽版，目前 FastAPI/Pydantic 尚不相容。
+    echo [錯誤] 偵測到 Python 3.14 預覽版，目前尚不相容。
     echo 請安裝 Python 3.12 或 3.11 後再執行。
     pause
     exit /b 1
 )
 
 if not exist .venv\ (
-    echo 首次啟動：正在建立虛擬環境...
+    echo 首次啟動：正在建立虛擬環境，請稍候...
     %PYTHON_CMD% -m venv .venv
     if %errorlevel% neq 0 (
         echo [錯誤] 虛擬環境建立失敗。
@@ -47,12 +48,15 @@ if not exist .venv\ (
 )
 
 call .venv\Scripts\activate.bat
-echo 安裝或更新依賴套件...
+echo 安裝或更新依賴套件，請稍候...
 pip install -r requirements.txt --quiet
 
-echo.
-echo [提醒] 請確認已修改 config.yaml 中的 session_secret_key 為隨機字串。
-echo.
+python setup_first_run.py
+if %errorlevel% neq 0 (
+    echo [錯誤] 設定未完成，請重新執行。
+    pause
+    exit /b 1
+)
 
 echo 啟動伺服器，請稍候...
 timeout /t 2 /nobreak >nul
