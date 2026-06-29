@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS procurement_projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    project_type TEXT NOT NULL CHECK(project_type IN ('local_culture', 'general_books')),
+    project_type TEXT NOT NULL CHECK(project_type IN (
+        'local_culture', 'general_books', 'local_culture_jh', 'general_books_jh'
+    )),
     budget_amount REAL,
     export_template_type TEXT NOT NULL DEFAULT 'local_culture',
     price_field TEXT NOT NULL DEFAULT 'purchase_price'

@@ -14,7 +14,9 @@ ALTER TABLE import_profiles ADD COLUMN extra_field_settings TEXT;
 CREATE TABLE IF NOT EXISTS export_templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
-    project_type TEXT NOT NULL CHECK(project_type IN ('local_culture', 'general_books')),
+    project_type TEXT NOT NULL CHECK(project_type IN (
+        'local_culture', 'general_books', 'local_culture_jh', 'general_books_jh'
+    )),
     template_file_path TEXT NOT NULL,
     sheet_name TEXT,
     header_row INTEGER NOT NULL DEFAULT 3,

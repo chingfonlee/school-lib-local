@@ -54,7 +54,7 @@ def _load_export_template_for_project(project_id: int, conn) -> dict:
     if tmpl is None:
         raise ValueError(
             f"找不到匯出範本（project_type={project['export_template_type']}）"
-            "，請確認 config.yaml export_templates 已設定並重新啟動服務。"
+            "，請至導覽列「範本管理」確認範本已設定。"
         )
     return dict(tmpl)
 
