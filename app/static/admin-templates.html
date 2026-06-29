@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>範本管理 — 圖書採購系統</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+.tmpl-table { width:100%; border-collapse:collapse; font-size:14px }
+.tmpl-table th, .tmpl-table td { padding:8px 12px; border-bottom:1px solid #e5e5e5; text-align:left }
+.tmpl-table th { background:#f5f5f7; font-weight:600 }
+.tmpl-file { font-family:monospace; font-size:12px; color:#555; word-break:break-all }
+.mapping-table { width:100%; border-collapse:collapse; font-size:14px; margin-top:12px }
+.mapping-table th, .mapping-table td { padding:8px 12px; border-bottom:1px solid #e5e5e5 }
+.mapping-table th { background:#f5f5f7; font-weight:600 }
+.status-ok   { color:#34c759; font-weight:600 }
+.status-warn { color:#ff9500; font-weight:600 }
+.status-err  { color:#c0392b; font-weight:600 }
+.col-badge { display:inline-block; background:#e8f4f8; color:#1d6fa4; border-radius:4px;
+             padding:1px 7px; font-family:monospace; font-weight:700; font-size:13px }
+.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-bottom:16px }
+.info-item { font-size:14px }
+.info-item label { color:#888; display:block; font-size:12px }
+#upload-area { border:2px dashed #c7c7cc; border-radius:8px; padding:32px;
+               text-align:center; cursor:pointer; transition:border-color .2s }
+#upload-area:hover, #upload-area.drag-over { border-color:#1d6fa4; background:#f0f7ff }
+#upload-area input[type=file] { display:none }
+.step-header { display:flex; align-items:center; gap:10px; margin-bottom:16px }
+.step-num-badge { width:28px; height:28px; border-radius:50%; background:#1d6fa4;
+                  color:#fff; font-weight:700; font-size:14px;
+                  display:flex;align-items:center;justify-content:center;flex-shrink:0 }
+</style>
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <span class="nav-title">圖書採購系統</span>
+    <div class="nav-steps">
+      <a href="/projects.html"><span class="step-num">1</span>採購專案</a>
+      <a href="/import.html"><span class="step-num">2</span>匯入</a>
+      <a href="/match.html"><span class="step-num">3</span>比對結果</a>
+      <a href="/selection.html"><span class="step-num">4</span>選書</a>
+      <a href="/export-check.html"><span class="step-num">5</span>匯出前檢查</a>
+      <a href="/export.html"><span class="step-num">6</span>匯出</a>
+    </div>
+    <a href="/holdings.html" class="nav-tool">館藏查詢</a>
+    <a href="/admin-templates.html" class="nav-tool active">範本管理</a>
+    <div class="nav-right"><span id="user-name"></span> <a href="#" onclick="logout()">登出</a></div>
+  </div>
+</nav>
+<div class="page container">
+  <h1>匯出範本管理</h1>
+  <p class="subtitle">每年更新書單 Excel 格式時，在此上傳新範本，系統會自動偵測欄位位置。</p>
+
+  <!-- 目前範本狀態 -->
+  <div class="card">
+    <h2>目前範本狀態</h2>
+    <div id="tmpl-list"><p style="color:#999">載入中...</p></div>
+  </div>
+
+  <!-- 上傳新範本 -->
+  <div class="card">
+    <div class="step-header">
+      <div class="step-num-badge">1</div>
+      <h2 style="margin:0">上傳新範本</h2>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>範本類型 <span style="color:#c0392b">*</span></label>
+        <select id="sel-type">
+          <option value="">請選擇類型</option>
+          <option value="local_culture">國小 本土文化採購</option>
+          <option value="general_books">國小 一般圖書採購</option>
+          <option value="local_culture_jh">國中 本土文化採購</option>
+          <option value="general_books_jh">國中 一般圖書採購</option>
+        </select>
+      </div>
+    </div>
+    <div id="upload-area" onclick="document.getElementById('file-input').click()"
+         ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="handleDrop(event)">
+      <input type="file" id="file-input" accept=".xlsx" onchange="handleFileSelect(event)">
+      <div id="upload-placeholder">
+        <div style="font-size:32px;margin-bottom:8px">📄</div>
+        <div style="font-weight:600">點擊或拖曳 Excel 範本至此</div>
+        <div style="color:#888;font-size:13px;margin-top:4px">僅支援 .xlsx 格式</div>
+      </div>
+      <div id="upload-selected" style="display:none">
+        <div style="font-size:24px;margin-bottom:6px">✓</div>
+        <div id="upload-filename" style="font-weight:600"></div>
+        <div style="color:#888;font-size:13px;margin-top:4px">點擊可重新選擇</div>
+      </div>
+    </div>
+    <div style="margin-top:16px">
+      <button class="btn btn-primary" id="analyze-btn" onclick="analyzeTemplate()" disabled>分析欄位</button>
+      <span id="analyze-status" style="margin-left:12px;font-size:14px;color:#888"></span>
+    </div>
+  </div>
+
+  <!-- 偵測結果 -->
+  <div class="card" id="result-card" style="display:none">
+    <div class="step-header">
+      <div class="step-num-badge">2</div>
+      <h2 style="margin:0">確認欄位對應</h2>
+    </div>
+    <p style="color:#555;font-size:14px">請確認以下偵測結果是否正確。紅色欄位表示未自動偵測到，請手動指定。</p>
+
+    <div class="info-grid" id="detect-info"></div>
+
+    <table class="mapping-table">
+      <thead><tr><th>欄位用途</th><th>偵測到的欄</th><th>範本標題文字</th><th>狀態</th></tr></thead>
+      <tbody id="mapping-body"></tbody>
+    </table>
+
+    <div style="margin-top:20px;display:flex;gap:12px">
+      <button class="btn btn-primary" id="save-btn" onclick="saveTemplate()">確認存入系統</button>
+      <button class="btn btn-secondary" onclick="resetUpload()">重新上傳</button>
+    </div>
+    <div id="save-status" style="margin-top:8px;font-size:14px"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="/js/common.js"></script>
+<script>
+let selectedFile = null;
+let analyzeResult = null;
+
+requireAuth().then(loadTemplates);
+
+// ── 目前範本狀態 ──────────────────────────────
+async function loadTemplates() {
+  try {
+    const rows = await api('/api/admin/templates');
+    const TYPE_LABELS = {
+      local_culture:    '國小 本土文化採購',
+      general_books:    '國小 一般圖書採購',
+      local_culture_jh: '國中 本土文化採購',
+      general_books_jh: '國中 一般圖書採購',
+    };
+    const el = document.getElementById('tmpl-list');
+    if (!rows.length) {
+      el.innerHTML = '<p style="color:#999">尚無範本設定</p>';
+      return;
+    }
+    el.innerHTML = `<table class="tmpl-table">
+      <thead><tr><th>類型</th><th>範本檔案</th><th>最後更新</th></tr></thead>
+      <tbody>${rows.map(r => `
+        <tr>
+          <td>${TYPE_LABELS[r.project_type] || r.project_type}</td>
+          <td class="tmpl-file">${r.template_file_path || '—'}</td>
+          <td style="white-space:nowrap">${r.updated_at ? new Date(r.updated_at).toLocaleDateString('zh-TW') : '—'}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  } catch (e) {
+    document.getElementById('tmpl-list').innerHTML = '<p style="color:#c0392b">載入失敗</p>';
+  }
+}
+
+// ── 檔案選擇 ──────────────────────────────────
+function handleFileSelect(e) {
+  const f = e.target.files[0];
+  if (f) setFile(f);
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('upload-area').classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.endsWith('.xlsx')) setFile(f);
+  else showToast('請選擇 .xlsx 檔案');
+}
+function setFile(f) {
+  selectedFile = f;
+  document.getElementById('upload-placeholder').style.display = 'none';
+  document.getElementById('upload-selected').style.display = 'block';
+  document.getElementById('upload-filename').textContent = f.name;
+  checkAnalyzeReady();
+}
+function checkAnalyzeReady() {
+  const typeOk = document.getElementById('sel-type').value;
+  document.getElementById('analyze-btn').disabled = !(typeOk && selectedFile);
+}
+document.getElementById('sel-type').addEventListener('change', checkAnalyzeReady);
+
+// ── 分析 ──────────────────────────────────────
+async function analyzeTemplate() {
+  const type = document.getElementById('sel-type').value;
+  if (!type || !selectedFile) return;
+
+  const btn = document.getElementById('analyze-btn');
+  const status = document.getElementById('analyze-status');
+  btn.disabled = true;
+  status.textContent = '分析中...';
+
+  try {
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('project_type', type);
+    const res = await fetch('/api/admin/templates/analyze', {
+      method: 'POST',
+      body: fd,
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || res.statusText);
+    }
+    analyzeResult = await res.json();
+    renderResult(analyzeResult, type);
+    document.getElementById('result-card').style.display = 'block';
+    document.getElementById('result-card').scrollIntoView({ behavior: 'smooth' });
+    status.textContent = '';
+  } catch (e) {
+    showToast('分析失敗：' + e.message);
+    status.textContent = '';
+    btn.disabled = false;
+  }
+}
+
+// ── 渲染偵測結果 ──────────────────────────────
+function renderResult(r, projectType) {
+  const info = document.getElementById('detect-info');
+  const infoItems = [
+    ['工作表', r.sheet_name],
+    ['標題列', `第 ${r.header_row} 列`],
+    ['資料起始列', `第 ${r.data_start_row} 列`],
+    ['最大資料行數', r.max_rows],
+    ['學校名稱儲存格', r.school_name_cell || '（未偵測到）'],
+    ['核定金額儲存格', r.approved_budget_cell || '（未偵測到）'],
+  ];
+  info.innerHTML = infoItems.map(([label, val]) => `
+    <div class="info-item"><label>${label}</label>${val}</div>`).join('');
+
+  const headers = r.all_headers;
+  const colOptions = ['<option value="">（不使用此欄位）</option>',
+    ...headers.map(h => `<option value="${h.col}">${h.col}欄 — ${h.text}</option>`)
+  ].join('');
+
+  const fieldLabels = r.field_labels || {};
+  const mappings = r.column_mappings || {};
+  const missing = new Set(r.missing_fields || []);
+  const required = new Set(r.required_fields || []);
+
+  // All fields to show: required first, then optional detected ones
+  const EXPECTED_FIELDS = {
+    local_culture:    ['sort_order','title','author','publisher','isbn','quantity','price','subtotal','award_item','notes'],
+    local_culture_jh: ['sort_order','title','author','publisher','isbn','quantity','price','subtotal','award_item','notes'],
+    general_books:    ['eligibility_label','sort_order','title','author','publisher','isbn','quantity','recommendation_source','policy_topic','price','subtotal','award_notes'],
+    general_books_jh: ['sort_order','eligibility_label','policy_topic','title','author','publisher','isbn','quantity','price','subtotal','award_notes','notes'],
+  };
+  const fields = EXPECTED_FIELDS[projectType] || Object.keys(mappings);
+
+  const tbody = document.getElementById('mapping-body');
+  tbody.innerHTML = fields.map(field => {
+    const detectedCol = mappings[field] || '';
+    const isMissing = missing.has(field);
+    const isRequired = required.has(field);
+    const headerText = detectedCol
+      ? (headers.find(h => h.col === detectedCol)?.text || '')
+      : '';
+
+    const selectEl = `<select id="map-${field}" class="field-col-select" data-field="${field}" data-required="${isRequired}"
+        style="font-size:13px;padding:3px 6px">
+        ${colOptions.replace(`value="${detectedCol}"`, `value="${detectedCol}" selected`)}
+      </select>`;
+
+    const reqBadge = isRequired ? ' <span style="color:#c0392b;font-size:11px">必填</span>' : '';
+    const statusHtml = isMissing
+      ? `<span class="status-err" id="status-${field}">⚠ 未偵測到</span>`
+      : `<span class="status-ok" id="status-${field}">✓ 偵測成功</span>`;
+
+    return `<tr id="row-${field}" ${isMissing ? 'style="background:#fff8f8"' : ''}>
+      <td>${fieldLabels[field] || field}${reqBadge}</td>
+      <td>${detectedCol ? `<span class="col-badge">${detectedCol}</span>` : '—'}</td>
+      <td style="color:#555;font-size:13px">${isMissing ? selectEl : headerText}</td>
+      <td>${statusHtml} ${detectedCol ? `<button class="btn btn-secondary btn-sm" style="margin-left:8px;font-size:11px" onclick="toggleOverride('${field}', this)">修改</button>` : ''}</td>
+    </tr>
+    <tr id="override-${field}" style="display:none;background:#f5f5f7">
+      <td colspan="4" style="padding:6px 12px">${selectEl.replace(`id="map-${field}"`, `id="override-sel-${field}"`).replace('class="field-col-select"', 'class="override-col-select"')}</td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleOverride(field, btn) {
+  const row = document.getElementById('override-' + field);
+  const shown = row.style.display !== 'none';
+  row.style.display = shown ? 'none' : '';
+  btn.textContent = shown ? '修改' : '取消';
+}
+
+// ── 存入系統 ──────────────────────────────────
+async function saveTemplate() {
+  if (!analyzeResult) return;
+
+  // Collect current column mappings from selects
+  const finalMappings = { ...analyzeResult.column_mappings };
+  document.querySelectorAll('.field-col-select').forEach(sel => {
+    const field = sel.dataset.field;
+    const val = sel.value;
+    if (val) finalMappings[field] = val;
+    else delete finalMappings[field];
+  });
+  // Collect visible override selects
+  document.querySelectorAll('[id^="override-sel-"]').forEach(sel => {
+    const field = sel.id.replace('override-sel-', '');
+    const overrideRow = document.getElementById('override-' + field);
+    if (overrideRow && overrideRow.style.display !== 'none' && sel.value) {
+      finalMappings[field] = sel.value;
+    }
+  });
+
+  // ── 前端必填驗證 ──────────────────────────────
+  const requiredFields = analyzeResult.required_fields || [];
+  const fieldLabels = analyzeResult.field_labels || {};
+  const unset = requiredFields.filter(f => !finalMappings[f]);
+  if (unset.length > 0) {
+    // 標紅缺少的必填欄位列
+    unset.forEach(f => {
+      const row = document.getElementById('row-' + f);
+      if (row) row.style.background = '#fff0f0';
+      const statusEl = document.getElementById('status-' + f);
+      if (statusEl) { statusEl.className = 'status-err'; statusEl.textContent = '⚠ 必填未對應'; }
+    });
+    const names = unset.map(f => fieldLabels[f] || f).join('、');
+    document.getElementById('save-status').innerHTML =
+      `<span style="color:#c0392b">❌ 以下必填欄位未對應，無法存入：${names}</span>`;
+    return;
+  }
+  document.getElementById('save-status').textContent = '';
+
+  const btn = document.getElementById('save-btn');
+  const status = document.getElementById('save-status');
+  btn.disabled = true;
+  status.textContent = '存入中...';
+
+  try {
+    await api('/api/admin/templates/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_type:       document.getElementById('sel-type').value,
+        tmp_path:           analyzeResult.tmp_path,
+        original_filename:  analyzeResult.original_filename,
+        sheet_name:         analyzeResult.sheet_name,
+        header_row:         analyzeResult.header_row,
+        data_start_row:     analyzeResult.data_start_row,
+        max_rows:           analyzeResult.max_rows,
+        school_name_cell:   analyzeResult.school_name_cell,
+        approved_budget_cell: analyzeResult.approved_budget_cell,
+        column_mappings:    finalMappings,
+      }),
+    });
+    showToast('範本已更新，立即生效');
+    status.textContent = '';
+    resetUpload();
+    loadTemplates();
+  } catch (e) {
+    showToast('存入失敗：' + e.message);
+    status.textContent = '';
+    btn.disabled = false;
+  }
+}
+
+function resetUpload() {
+  selectedFile = null;
+  analyzeResult = null;
+  document.getElementById('file-input').value = '';
+  document.getElementById('upload-placeholder').style.display = 'block';
+  document.getElementById('upload-selected').style.display = 'none';
+  document.getElementById('analyze-btn').disabled = true;
+  document.getElementById('analyze-status').textContent = '';
+  document.getElementById('result-card').style.display = 'none';
+  document.getElementById('save-status').textContent = '';
+}
+</script>
+</body>
+</html>
