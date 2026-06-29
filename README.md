@@ -23,6 +23,7 @@
 
 - **本土文化採購**：主要功能，包含館藏比對、選書、A 欄資格標記、H 欄推薦來源、匯出採購書單
 - **一般圖書採購**：目前支援，詳細操作流程請見 [一般圖書採購快速上手](docs/user-guide/general-books-quickstart.md)
+- **匯出範本管理**：年度或縣市採購書單格式變更時，可透過「範本管理」頁面上傳新空白範本，無需修改設定檔
 
 ## 系統需求
 
@@ -119,3 +120,4 @@ copy config.example.yaml config.yaml
 - [Windows 安裝指南](docs/user-guide/install-windows.md)
 - [本土文化採購快速上手](docs/user-guide/local-culture-quickstart.md)
 - [一般圖書採購快速上手](docs/user-guide/general-books-quickstart.md)
+- [匯出範本管理](docs/user-guide/export-template-management.md)

@@ -50,7 +50,8 @@
 </nav>
 <div class="page container">
   <h1>匯出範本管理</h1>
-  <p class="subtitle">每年更新書單 Excel 格式時，在此上傳新範本，系統會自動偵測欄位位置。</p>
+  <p class="subtitle">每年更新採購書單 Excel 格式時，在此上傳新的<strong>空白採購書單範本</strong>，系統會自動偵測欄位位置。</p>
+  <p style="color:#888;font-size:13px;margin-top:-8px">此處上傳的是空白採購書單格式檔，<strong>不是書商書單</strong>。書商書單請至「匯入」頁面匯入。</p>
 
   <!-- 目前範本狀態 -->
   <div class="card">
@@ -117,7 +118,8 @@
       <button class="btn btn-primary" id="save-btn" onclick="saveTemplate()">確認存入系統</button>
       <button class="btn btn-secondary" onclick="resetUpload()">重新上傳</button>
     </div>
-    <div id="save-status" style="margin-top:8px;font-size:14px"></div>
+    <p style="color:#888;font-size:12px;margin-top:8px">存入後立即套用於後續匯出，不影響已匯出的 Excel 檔案。</p>
+    <div id="save-status" style="margin-top:4px;font-size:14px"></div>
   </div>
 </div>
 
