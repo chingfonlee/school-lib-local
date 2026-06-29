@@ -51,7 +51,7 @@ async def do_export(body: ExportRequest, user_id: int = Depends(require_auth)):
         exported_by=user_id,
     )
     try:
-        if project["project_type"] == "general_books":
+        if project["project_type"] in ("general_books", "general_books_jh"):
             job_id = export_general_books(settings)
         else:
             job_id = export_local_culture(settings)

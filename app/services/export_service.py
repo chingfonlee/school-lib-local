@@ -246,6 +246,19 @@ def export_general_books(settings: ExportSettings) -> str:
     wb = openpyxl.load_workbook(out_path)
     ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb.active
 
+    school_name_cell = tmpl.get("school_name_cell") or ""
+    approved_budget_cell = tmpl.get("approved_budget_cell") or ""
+    school_name_prefix = "校名："
+    budget_prefix = "本案核定金額：新臺幣"
+    budget_suffix = "元"
+
+    if school_name_cell:
+        ws[school_name_cell] = school_name_prefix + settings.school_name
+    if approved_budget_cell and settings.approved_budget is not None:
+        ws[approved_budget_cell] = (
+            budget_prefix + f"{settings.approved_budget:,.0f}" + budget_suffix
+        )
+
     if example_row >= 1:
         for key in col_map:
             ws.cell(row=example_row, column=col(key)).value = None
@@ -302,11 +315,16 @@ def export_general_books(settings: ExportSettings) -> str:
             _resolve_field(book, "isbn_normalized") or _resolve_field(book, "isbn") or None
         )
         ws.cell(row=row, column=col("quantity")).value = quantity
-        ws.cell(row=row, column=col("recommendation_source")).value = _resolve_field(book, "recommendation_source") or None
-        ws.cell(row=row, column=col("policy_topic")).value = _resolve_field(book, "policy_topic") or None
+        if "recommendation_source" in col_map:
+            ws.cell(row=row, column=col("recommendation_source")).value = _resolve_field(book, "recommendation_source") or None
+        if "policy_topic" in col_map:
+            ws.cell(row=row, column=col("policy_topic")).value = _resolve_field(book, "policy_topic") or None
         ws.cell(row=row, column=col("price")).value = price if price else None
         ws.cell(row=row, column=col("subtotal")).value = subtotal if subtotal else None
-        ws.cell(row=row, column=col("award_notes")).value = _resolve_field(book, "award_notes") or None
+        if "award_notes" in col_map:
+            ws.cell(row=row, column=col("award_notes")).value = _resolve_field(book, "award_notes") or None
+        if "notes" in col_map:
+            ws.cell(row=row, column=col("notes")).value = book.get("notes") or None
 
         total_qty += quantity
         total_amount += subtotal

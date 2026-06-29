@@ -111,7 +111,7 @@ requireAuth().then(async () => {
     return;
   }
   document.getElementById('project-banner').textContent =
-    `目前專案：${proj.name}（${proj.project_type === 'local_culture' ? '本土文化採購' : '一般圖書採購'}）`;
+    `目前專案：${proj.name}（${projectTypeLabel(proj.project_type)}）`;
   const [stats, selSummary, jobs] = await Promise.all([
     api(`/api/books/stats?project_id=${pid}`),
     api(`/api/selections/?project_id=${pid}`),

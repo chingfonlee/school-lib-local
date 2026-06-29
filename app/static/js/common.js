@@ -1,6 +1,19 @@
 const PROJECT_KEY = 'current_project_id';
 const PROJECT_NAME_KEY = 'current_project_name';
 
+const PROJECT_TYPE_LABELS = {
+  local_culture:     '國小本土文化採購',
+  general_books:     '國小一般圖書採購',
+  local_culture_jh:  '國中本土文化採購',
+  general_books_jh:  '國中一般圖書採購',
+};
+function projectTypeLabel(type) {
+  return PROJECT_TYPE_LABELS[type] || type;
+}
+function isGeneralBooks(type) {
+  return type === 'general_books' || type === 'general_books_jh';
+}
+
 function getProjectId() {
   const s = parseInt(sessionStorage.getItem(PROJECT_KEY));
   if (s > 0) return s;

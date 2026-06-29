@@ -46,8 +46,10 @@
       <div class="form-group">
         <label>採購類型</label>
         <select id="new-type">
-          <option value="local_culture">本土文化採購</option>
-          <option value="general_books">一般圖書採購</option>
+          <option value="local_culture">國小 本土文化採購</option>
+          <option value="general_books">國小 一般圖書採購</option>
+          <option value="local_culture_jh">國中 本土文化採購</option>
+          <option value="general_books_jh">國中 一般圖書採購</option>
         </select>
       </div>
     </div>
@@ -197,7 +199,7 @@ async function loadProjects() {
         <div class="project-info">
           <div class="project-name">${p.name}${isCurrent ? ' <span class="badge badge-available">目前使用</span>' : ''}</div>
           <div class="project-meta">
-            ${p.project_type === 'local_culture' ? '本土文化採購' : '一般圖書採購'} ·
+            ${projectTypeLabel(p.project_type)} ·
             定價欄：${p.price_field === 'purchase_price' ? '採購單價' : '定價'} ·
             小計：${p.subtotal_mode === 'quantity_times_purchase_price' ? '數量×採購單價' : '數量×定價'}
           </div>

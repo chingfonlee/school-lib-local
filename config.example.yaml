@@ -76,6 +76,49 @@ export_templates:
       subtotal: "K"
       award_notes: "L"
 
+  - name: "local_culture_jh_kaohsiung_115"
+    project_type: "local_culture_jh"
+    template_file_path: "./00_source/115年充實本土文化相關圖書-00區-00國中-圖書採購書單(範例).xlsx"
+    sheet_name: "本土文化書單"
+    header_row: 4
+    data_start_row: 6
+    max_rows: 50
+    school_name_cell: "A3"
+    approved_budget_cell: "E3"
+    column_mappings:
+      sort_order: "A"
+      title: "B"
+      author: "C"
+      publisher: "D"
+      isbn: "E"
+      quantity: "F"
+      price: "G"
+      subtotal: "H"
+      award_item: "I"
+      notes: "J"
+  - name: "general_books_jh_kaohsiung_115"
+    project_type: "general_books_jh"
+    template_file_path: "./00_source/115年充實圖書館藏書量(必選及自選)-00區-00國中-圖書採購書單(範例).xlsx"
+    sheet_name: "充實圖書館藏書單"
+    header_row: 4
+    data_start_row: 6
+    max_rows: 50
+    school_name_cell: "A3"
+    approved_budget_cell: "E3"
+    column_mappings:
+      sort_order: "A"
+      eligibility_label: "B"
+      policy_topic: "C"
+      title: "D"
+      author: "E"
+      publisher: "F"
+      isbn: "G"
+      quantity: "H"
+      price: "I"
+      subtotal: "J"
+      award_notes: "K"
+      notes: "L"
+
 default_project:
   name: "115年度採購"
   project_type: "local_culture"

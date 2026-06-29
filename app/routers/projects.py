@@ -77,7 +77,7 @@ async def list_projects(user_id: int = Depends(require_auth)):
 
 @router.post("/")
 async def create_project(body: ProjectCreate, user_id: int = Depends(require_auth)):
-    if body.project_type not in ("local_culture", "general_books"):
+    if body.project_type not in ("local_culture", "general_books", "local_culture_jh", "general_books_jh"):
         raise HTTPException(status_code=400, detail="無效的 project_type")
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
