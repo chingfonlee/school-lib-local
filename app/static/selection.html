@@ -95,6 +95,10 @@
         <option value="自選">自選</option>
       </select>
     </div>
+    <div class="filter-field" id="field-recommendation-source" style="display:none">
+      <label>推薦來源：</label>
+      <select id="filter-recommendation-source" onchange="applyFilter()"><option value="">全部</option></select>
+    </div>
     <div class="filter-field">
       <input type="number" id="filter-min-price" placeholder="最低價" oninput="applyFilter()" style="width:72px">
       <span style="color:#aaa">~</span>
@@ -208,6 +212,7 @@ function populateDynamicSelects() {
   populate('filter-age', allBooks.map(b => b.age_range));
   populate('filter-category', allBooks.map(b => b.category));
   populate('filter-policy-topic', allBooks.map(b => b.policy_topic));
+  populate('filter-recommendation-source', allBooks.map(b => b.recommendation_source));
 
   document.getElementById('field-book-type').style.display =
     document.getElementById('filter-book-type').options.length > 1 ? '' : 'none';
@@ -215,6 +220,8 @@ function populateDynamicSelects() {
     document.getElementById('filter-category').options.length > 1 ? '' : 'none';
   document.getElementById('field-policy-topic').style.display =
     document.getElementById('filter-policy-topic').options.length > 1 ? '' : 'none';
+  document.getElementById('field-recommendation-source').style.display =
+    document.getElementById('filter-recommendation-source').options.length > 1 ? '' : 'none';
 }
 
 function getEffectiveMatchStatus(b) {
@@ -235,7 +242,7 @@ function normalizeText(v) {
 function includesKeyword(b, kw) {
   const k = normalizeText(kw);
   return [b.title, b.author, b.isbn, b.isbn_normalized, b.publisher,
-          b.summary, b.category, b.book_type, b.policy_topic]
+          b.summary, b.category, b.book_type, b.policy_topic, b.recommendation_source]
     .some(v => normalizeText(v).includes(k));
 }
 
@@ -294,6 +301,7 @@ function applyFilter() {
   const category = document.getElementById('filter-category').value;
   const policyTopic = document.getElementById('filter-policy-topic').value;
   const purchaseCat = document.getElementById('filter-purchase-category').value;
+  const recommendationSource = document.getElementById('filter-recommendation-source').value;
   const minPrice = document.getElementById('filter-min-price').value;
   const maxPrice = document.getElementById('filter-max-price').value;
   const text = document.getElementById('filter-text').value.trim();
@@ -307,6 +315,7 @@ function applyFilter() {
   if (category) filtered = filtered.filter(b => (b.category || '') === category);
   if (policyTopic) filtered = filtered.filter(b => (b.policy_topic || '') === policyTopic);
   if (purchaseCat) filtered = filtered.filter(b => getPurchaseCategory(b) === purchaseCat);
+  if (recommendationSource) filtered = filtered.filter(b => (b.recommendation_source || '') === recommendationSource);
   if (minPrice !== '') {
     const min = parseFloat(minPrice);
     if (!isNaN(min)) filtered = filtered.filter(b => { const p = getEffectivePrice(b); return p !== null && p >= min; });
@@ -369,7 +378,7 @@ function goPage(delta) {
 }
 
 function resetFilters() {
-  ['filter-match', 'filter-comp', 'filter-book-type', 'filter-age', 'filter-category', 'filter-policy-topic', 'filter-purchase-category', 'filter-sort']
+  ['filter-match', 'filter-comp', 'filter-book-type', 'filter-age', 'filter-category', 'filter-policy-topic', 'filter-purchase-category', 'filter-recommendation-source', 'filter-sort']
     .forEach(id => { const s = document.getElementById(id); s.value = s.options[0].value; });
   ['filter-min-price', 'filter-max-price', 'filter-text']
     .forEach(id => { document.getElementById(id).value = ''; });
