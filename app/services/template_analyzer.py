@@ -56,7 +56,7 @@ FIELD_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "quantity":          ["採購數量", "數量"],
         "price":             ["定價"],
         "subtotal":          ["小計"],
-        "award_notes":       ["獲獎項目"],
+        "recommendation_source": ["獲獎項目"],
         "notes":             ["備註"],
     },
 }

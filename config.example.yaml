@@ -116,7 +116,7 @@ export_templates:
       quantity: "H"
       price: "I"
       subtotal: "J"
-      award_notes: "K"
+      recommendation_source: "K"
       notes: "L"
 
 default_project:

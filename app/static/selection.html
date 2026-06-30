@@ -446,7 +446,8 @@ function render(books) {
           ${!isGeneral ? `<div class="field-row"><label>獲獎項目</label><input type="text" value="${(ov.award_item||b.award_item||'').replace(/"/g,'&quot;')}" data-field="award_item" data-bookid="${b.id}"></div>` : ''}
           ${isGeneral ? `<div class="field-row"><label>必選/推薦（${projectType === 'general_books_jh' ? 'B' : 'A'}欄）</label><select data-field="eligibility_label" data-bookid="${b.id}">${eligOptions}</select></div>` : ''}
           ${projectType === 'general_books' ? `<div class="field-row"><label>H欄推薦來源</label><select data-field="recommendation_source" data-bookid="${b.id}">${recSrcOptions}</select></div>` : ''}
-          ${isGeneral ? `<div class="field-row"><label>${projectType === 'general_books_jh' ? 'K欄獲獎項目' : '備註（L欄）'}</label><input type="text" value="${(ov.award_notes||b.award_notes||'').replace(/"/g,'&quot;')}" data-field="award_notes" data-bookid="${b.id}"></div>` : ''}
+          ${projectType === 'general_books_jh' ? `<div class="field-row"><label>K欄獲獎項目</label><select data-field="recommendation_source" data-bookid="${b.id}">${recSrcOptions}</select></div>` : ''}
+          ${projectType === 'general_books' ? `<div class="field-row"><label>備註（L欄）</label><input type="text" value="${(ov.award_notes||b.award_notes||'').replace(/"/g,'&quot;')}" data-field="award_notes" data-bookid="${b.id}"></div>` : ''}
           <div class="field-row"><label>定價</label><input type="number" value="${ov.list_price||b.list_price||''}" data-field="list_price" data-bookid="${b.id}"></div>
           <div class="field-row"><label>單價</label><input type="number" value="${ov.purchase_price||b.purchase_price||''}" data-field="purchase_price" data-bookid="${b.id}"></div>
           <button class="btn btn-primary btn-sm" onclick="saveOverrides(${b.id}, ${selId})">儲存修正</button>
@@ -572,7 +573,8 @@ function renderClearedItems(items) {
           ${!isGeneral ? `<div class="field-row"><label>獲獎項目</label><input type="text" value="${(ov.award_item||s.award_item||'').replace(/"/g,'&quot;')}" data-field="award_item" data-selid="${s.sel_id}"></div>` : ''}
           ${isGeneral ? `<div class="field-row"><label>必選/推薦（${projectType === 'general_books_jh' ? 'B' : 'A'}欄）</label><select data-field="eligibility_label" data-selid="${s.sel_id}">${eligOptions}</select></div>` : ''}
           ${projectType === 'general_books' ? `<div class="field-row"><label>H欄推薦來源</label><select data-field="recommendation_source" data-selid="${s.sel_id}">${recSrcOptions}</select></div>` : ''}
-          ${isGeneral ? `<div class="field-row"><label>${projectType === 'general_books_jh' ? 'K欄獲獎項目' : '備註（L欄）'}</label><input type="text" value="${(ov.award_notes||s.award_notes||'').replace(/"/g,'&quot;')}" data-field="award_notes" data-selid="${s.sel_id}"></div>` : ''}
+          ${projectType === 'general_books_jh' ? `<div class="field-row"><label>K欄獲獎項目</label><select data-field="recommendation_source" data-selid="${s.sel_id}">${recSrcOptions}</select></div>` : ''}
+          ${projectType === 'general_books' ? `<div class="field-row"><label>備註（L欄）</label><input type="text" value="${(ov.award_notes||s.award_notes||'').replace(/"/g,'&quot;')}" data-field="award_notes" data-selid="${s.sel_id}"></div>` : ''}
           <div class="field-row"><label>定價</label><input type="number" value="${ov.list_price||s.list_price||''}" data-field="list_price" data-selid="${s.sel_id}"></div>
           <div class="field-row"><label>單價</label><input type="number" value="${ov.purchase_price||s.purchase_price||''}" data-field="purchase_price" data-selid="${s.sel_id}"></div>
           <button class="btn btn-primary btn-sm" onclick="saveSelectionOverrides(${s.sel_id})">儲存修正</button>

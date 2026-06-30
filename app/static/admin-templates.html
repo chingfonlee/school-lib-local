@@ -248,7 +248,7 @@ function renderResult(r, projectType) {
     local_culture:    ['sort_order','title','author','publisher','isbn','quantity','price','subtotal','award_item','notes'],
     local_culture_jh: ['sort_order','title','author','publisher','isbn','quantity','price','subtotal','award_item','notes'],
     general_books:    ['eligibility_label','sort_order','title','author','publisher','isbn','quantity','recommendation_source','policy_topic','price','subtotal','award_notes'],
-    general_books_jh: ['sort_order','eligibility_label','policy_topic','title','author','publisher','isbn','quantity','price','subtotal','award_notes','notes'],
+    general_books_jh: ['sort_order','eligibility_label','policy_topic','title','author','publisher','isbn','quantity','price','subtotal','recommendation_source','notes'],
   };
   const fields = EXPECTED_FIELDS[projectType] || Object.keys(mappings);
 

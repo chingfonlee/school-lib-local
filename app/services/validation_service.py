@@ -80,18 +80,21 @@ def check_export_readiness(project_id: int, price_field: str) -> dict:
         if r["selected_quantity"] <= 0:
             missing_blocking.append("採購數量")
 
-        if project_type == "general_books":
+        if project_type in ("general_books", "general_books_jh"):
+            eligibility_col = "B" if project_type == "general_books_jh" else "A"
+            recommendation_col = "K" if project_type == "general_books_jh" else "H"
             eligibility = _resolve(r, "eligibility_label", overrides)
             if not eligibility:
-                missing_blocking.append("必選/推薦（A欄）")
+                missing_blocking.append(f"必選/推薦（{eligibility_col}欄）")
 
             rec_src = _resolve(r, "recommendation_source", overrides)
             if not rec_src or rec_src not in GENERAL_BOOKS_H_ALLOWED:
-                missing_blocking.append("H欄獲獎代碼（非法或空白）")
+                missing_blocking.append(f"{recommendation_col}欄獲獎項目（非法或空白）")
             elif rec_src in GENERAL_BOOKS_H_REQUIRES_NOTES:
-                notes = _resolve(r, "award_notes", overrides)
+                notes_field = "notes" if project_type == "general_books_jh" else "award_notes"
+                notes = _resolve(r, notes_field, overrides)
                 if not notes:
-                    missing_blocking.append("備註（L欄，H欄需備註）")
+                    missing_blocking.append(f"備註（L欄，{recommendation_col}欄需備註）")
 
             if not _resolve(r, "author", overrides):
                 missing_review.append("作者")

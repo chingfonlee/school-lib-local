@@ -250,7 +250,8 @@ function buildEditForm(selId, vendorBookId) {
   const generalFields = isGeneralBooks(projectType) ? `
     <div class="field-row"><label>必選/推薦（${projectType === 'general_books_jh' ? 'B' : 'A'}欄）</label><select data-check-bookid="${vendorBookId}" data-field="eligibility_label">${eligOptions}</select></div>
     ${projectType === 'general_books' ? `<div class="field-row"><label>H欄推薦來源</label><select data-check-bookid="${vendorBookId}" data-field="recommendation_source">${recSrcOptions}</select></div>` : ''}
-    <div class="field-row"><label>${projectType === 'general_books_jh' ? 'K欄獲獎項目' : '備註（L欄）'}</label><input type="text" value="${v('award_notes')}" data-check-bookid="${vendorBookId}" data-field="award_notes"></div>` : '';
+    ${projectType === 'general_books_jh' ? `<div class="field-row"><label>K欄獲獎項目</label><select data-check-bookid="${vendorBookId}" data-field="recommendation_source">${recSrcOptions}</select></div>` : ''}
+    ${projectType === 'general_books' ? `<div class="field-row"><label>備註（L欄）</label><input type="text" value="${v('award_notes')}" data-check-bookid="${vendorBookId}" data-field="award_notes"></div>` : ''}` : '';
   return `<div class="inline-edit open" style="padding:12px 16px">
     <div class="field-row"><label>書名</label><input type="text" value="${v('title')}" data-check-bookid="${vendorBookId}" data-field="title"></div>
     <div class="field-row"><label>作者</label><input type="text" value="${v('author')}" data-check-bookid="${vendorBookId}" data-field="author"></div>

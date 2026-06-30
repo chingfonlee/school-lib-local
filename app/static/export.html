@@ -139,7 +139,7 @@ async function loadPreview() {
       <td>${b.list_price ? formatCurrency(b.list_price) : '—'}</td>
       <td>${b.purchase_price ? formatCurrency(b.purchase_price) : '—'}</td>
       <td>${b.selected_quantity}</td>
-      <td style="font-size:12px;max-width:140px;white-space:normal">${projectType === 'general_books' ? (ov.recommendation_source||b.recommendation_source||'—') : isGeneralBooks(projectType) ? (ov.award_notes||b.award_notes||'—') : (ov.award_item||b.award_item||'—')}</td>
+      <td style="font-size:12px;max-width:140px;white-space:normal">${isGeneralBooks(projectType) ? (ov.recommendation_source||b.recommendation_source||'—') : (ov.award_item||b.award_item||'—')}</td>
       <td>${badge(b.completeness_status||'unknown')}</td>
     </tr>`;
   }).join('');
