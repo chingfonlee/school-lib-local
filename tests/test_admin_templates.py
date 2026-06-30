@@ -38,7 +38,7 @@ def admin_tmp(monkeypatch, tmp_path):
     - Bypasses require_auth.
     - Yields (client, allowed_tmp_dir, other_tmp_dir).
     """
-    allowed = tmp_path / "00_source" / ".tmp"
+    allowed = tmp_path / "purchase-order-template" / ".tmp"
     allowed.mkdir(parents=True)
     monkeypatch.setattr(admin_mod, "_TMP_DIR", allowed)
 
@@ -159,7 +159,7 @@ def test_save_error_names_missing_fields(admin_tmp):
 def test_save_stable_path_per_project_type(admin_tmp, admin_db, monkeypatch, tmp_path):
     """
     Two different project_types with the same original_filename must be saved
-    to distinct paths (00_source/templates/{project_type}.xlsx).
+    to distinct paths (purchase-order-template/templates/{project_type}.xlsx).
     """
     client, allowed, outer = admin_tmp
 
@@ -171,7 +171,7 @@ def test_save_stable_path_per_project_type(admin_tmp, admin_db, monkeypatch, tmp
     monkeypatch.setattr(admin_mod.shutil, "move", mock_move)
 
     # Dest dir must exist (normally created by mkdir in save_template)
-    dest_dir = Path("00_source") / "templates"
+    dest_dir = Path("purchase-order-template") / "templates"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     for project_type, mapping in [

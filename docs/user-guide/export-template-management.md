@@ -58,7 +58,7 @@
 確認欄位對應無誤後，點選「**確認存入系統**」。
 
 - 存入後立即套用於後續匯出，不影響已匯出的 Excel 檔案
-- 範本檔案會保存於 `00_source/templates/` 資料夾（此路徑不進 git）
+- 範本檔案會保存於 `purchase-order-template/templates/` 資料夾（本機上傳覆蓋用，不納入 git；內建四份範本位於 `purchase-order-template/` 根目錄並納入 repo）
 - 每個類型只保留最新一份範本；重新上傳同類型範本會覆蓋舊設定
 
 ---

@@ -26,7 +26,7 @@ auth:
   session_secret_key: "<generate-a-random-secret>"
 
 source:
-  local_culture_export_template: "./00_source/高雄市115年度○○區○○國小圖書館（室）充實本土文化相關圖書採購書單(空白).xlsx"
+  local_culture_export_template: "./purchase-order-template/高雄市115年度○○區○○國小圖書館（室）充實本土文化相關圖書採購書單(空白).xlsx"
 
 export:
   output_dir: "./exports"
@@ -36,7 +36,7 @@ export:
 export_templates:
   - name: "local_culture_kaohsiung_115"
     project_type: "local_culture"
-    template_file_path: "./00_source/高雄市115年度○○區○○國小圖書館（室）充實本土文化相關圖書採購書單(空白).xlsx"
+    template_file_path: "./purchase-order-template/高雄市115年度○○區○○國小圖書館（室）充實本土文化相關圖書採購書單(空白).xlsx"
     header_row: 4
     data_start_row: 6
     max_rows: 50
@@ -55,7 +55,7 @@ export_templates:
       notes: "J"
   - name: "general_books_kaohsiung_115"
     project_type: "general_books"
-    template_file_path: "./00_source/高雄市115年度○○區○○國小圖書館（室）圖書採購書單(空白).xlsx"
+    template_file_path: "./purchase-order-template/高雄市115年度○○區○○國小圖書館（室）圖書採購書單(空白).xlsx"
     sheet_name: "正式書單"
     header_row: 4
     data_start_row: 6
@@ -78,7 +78,7 @@ export_templates:
 
   - name: "local_culture_jh_kaohsiung_115"
     project_type: "local_culture_jh"
-    template_file_path: "./00_source/115年充實本土文化相關圖書-00區-00國中-圖書採購書單(範例).xlsx"
+    template_file_path: "./purchase-order-template/115年充實本土文化相關圖書-00區-00國中-圖書採購書單(範例).xlsx"
     sheet_name: "本土文化書單"
     header_row: 4
     data_start_row: 6
@@ -98,7 +98,7 @@ export_templates:
       notes: "J"
   - name: "general_books_jh_kaohsiung_115"
     project_type: "general_books_jh"
-    template_file_path: "./00_source/115年充實圖書館藏書量(必選及自選)-00區-00國中-圖書採購書單(範例).xlsx"
+    template_file_path: "./purchase-order-template/115年充實圖書館藏書量(必選及自選)-00區-00國中-圖書採購書單(範例).xlsx"
     sheet_name: "充實圖書館藏書單"
     header_row: 4
     data_start_row: 6

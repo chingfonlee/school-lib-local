@@ -13,7 +13,8 @@ from app.services.template_analyzer import analyze_template, FIELD_LABELS
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-_TMP_DIR = Path("00_source") / ".tmp"
+_TEMPLATE_DIR = Path("purchase-order-template")
+_TMP_DIR = _TEMPLATE_DIR / ".tmp"
 
 # 必填欄位：與 export_service.py 的直接 col_map[key] 呼叫保持一致
 # optional 欄位（已在 export_service 以 if "x" in col_map 保護）不列入
@@ -118,7 +119,7 @@ async def save_template(body: SaveTemplateRequest, user_id: int = Depends(requir
         )
 
     # ── 5. 穩定目的路徑（project_type 唯一，不同類型不互相覆蓋）──────────
-    dest_dir = Path("00_source") / "templates"
+    dest_dir = _TEMPLATE_DIR / "templates"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{body.project_type}.xlsx"
 

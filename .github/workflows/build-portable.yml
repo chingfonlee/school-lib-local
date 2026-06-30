@@ -40,7 +40,7 @@ jobs:
 
           Copy-Item python-embed "$out\python" -Recurse
 
-          foreach ($item in @('app','migrations','docs','sample-data','config.example.yaml',
+          foreach ($item in @('app','migrations','docs','sample-data','purchase-order-template','config.example.yaml',
                                'setup_first_run.py','requirements.txt',
                                'LICENSE','README.md','CONTRIBUTING.md','SECURITY.md')) {
             if (Test-Path $item) { Copy-Item $item "$out\" -Recurse }

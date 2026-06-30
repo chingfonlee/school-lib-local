@@ -19,6 +19,8 @@ __pycache__/
 
 # Source data — place your own files here, do not commit real school data
 00_source/
+purchase-order-template/.tmp/
+purchase-order-template/templates/
 
 # Local agent/plugin files
 .codex-plugin/

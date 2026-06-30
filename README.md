@@ -78,6 +78,7 @@
 |------|------|
 | `data/` | 資料庫與館藏記錄 |
 | `exports/` | 匯出的採購書單 |
+| `purchase-order-template/` | 匯出採購書單範本 |
 | `00_source/` | 書商 Excel 原始書單 |
 | `tmp/` | 暫存檔案 |
 | `config.yaml` | 本機設定（含密碼） |
