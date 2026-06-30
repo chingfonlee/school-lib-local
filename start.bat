@@ -59,8 +59,7 @@ if %errorlevel% neq 0 (
 )
 
 echo 啟動伺服器，請稍候...
-timeout /t 2 /nobreak >nul
-start "" http://127.0.0.1:8765
+start "" /b powershell -NoProfile -ExecutionPolicy Bypass -Command "$url='http://127.0.0.1:8765'; for ($i=0; $i -lt 60; $i++) { try { Invoke-WebRequest -UseBasicParsing -Uri ($url + '/api/health') -TimeoutSec 1 | Out-Null; Start-Process $url; exit 0 } catch { Start-Sleep -Seconds 1 } }; Start-Process $url"
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 
 pause
