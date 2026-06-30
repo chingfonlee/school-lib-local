@@ -275,7 +275,7 @@ function toggleCheckEdit(selId, vendorBookId) {
 }
 
 async function patchQuantity(selId, input) {
-  const qty = parseInt(input.value, 10);
+  const qty = input.valueAsNumber;
   if (!Number.isInteger(qty) || qty < 1) {
     showToast('數量必須是整數且 >= 1');
     await runCheck();

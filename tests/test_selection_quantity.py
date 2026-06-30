@@ -96,6 +96,12 @@ def test_patch_quantity_does_not_clear_user_overrides(qty_db):
     assert data.get("list_price") == "99"
 
 
+def test_patch_quantity_float_returns_422(qty_db):
+    _, client = qty_db
+    r = client.patch("/api/selections/1/quantity", json={"quantity": 1.5})
+    assert r.status_code == 422
+
+
 def test_patch_quantity_zero_returns_422(qty_db):
     _, client = qty_db
     r = client.patch("/api/selections/1/quantity", json={"quantity": 0})
