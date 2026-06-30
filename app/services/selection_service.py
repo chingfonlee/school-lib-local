@@ -178,6 +178,31 @@ def get_selected_books(project_id: int) -> list:
     return result
 
 
+def update_selection_quantity(
+    selection_id: int,
+    quantity: int,
+    user_id: int,
+) -> dict:
+    conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+
+    row = conn.execute(
+        "SELECT id FROM selection_items WHERE id = ?",
+        (selection_id,),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        raise ValueError(f"selection_items.id={selection_id} 不存在")
+
+    conn.execute(
+        "UPDATE selection_items SET selected_quantity = ?, updated_at = ? WHERE id = ?",
+        (quantity, now, selection_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"selection_id": selection_id, "selected_quantity": quantity}
+
+
 def remove_selection(selection_id: int) -> dict:
     conn = get_connection()
     result = conn.execute(

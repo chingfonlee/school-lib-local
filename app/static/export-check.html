@@ -65,7 +65,7 @@
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>書名</th><th>比對狀態</th><th>完整度</th><th>缺少必填</th><th>缺少建議欄位</th><th>操作</th>
+          <th>書名</th><th>數量</th><th>比對狀態</th><th>完整度</th><th>缺少必填</th><th>缺少建議欄位</th><th>操作</th>
         </tr></thead>
         <tbody id="detail-body"></tbody>
       </table>
@@ -189,11 +189,13 @@ function renderStats(d) {
 function renderDetails(details) {
   const tbody = document.getElementById('detail-body');
   if (!details.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:40px">尚無選書</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:40px">尚無選書</td></tr>';
     return;
   }
   tbody.innerHTML = details.map(d => {
     const isOwned = d.match_status === 'already_owned';
+    const selQty = (bookDataMap[d.vendor_book_id] || {}).selected_quantity || 1;
+    const qtyCell = `<td style="white-space:nowrap"><input type="number" min="1" step="1" value="${selQty}" style="width:64px" onchange="patchQuantity(${d.sel_id}, this)"></td>`;
     const actionCell = isOwned ? '<td></td>' : `<td style="white-space:nowrap">
       <button class="btn btn-secondary btn-sm" onclick="removeBook(${d.sel_id})">移除</button>
       <button class="btn btn-secondary btn-sm" onclick="toggleCheckEdit(${d.sel_id}, ${d.vendor_book_id})" style="margin-left:4px">修正</button>
@@ -201,6 +203,7 @@ function renderDetails(details) {
     return `
     <tr>
       <td>${d.title || '—'}</td>
+      ${qtyCell}
       <td>${badge(d.match_status)}</td>
       <td>${badge(d.completeness_status)}</td>
       <td class="missing-list">${d.missing_blocking_fields.length ? d.missing_blocking_fields.join('、') : '<span style="color:#1d8348">無</span>'}</td>
@@ -208,7 +211,7 @@ function renderDetails(details) {
       ${actionCell}
     </tr>
     <tr id="check-edit-row-${d.sel_id}" style="display:none">
-      <td colspan="6" style="padding:0;background:#f9f9f9">${buildEditForm(d.sel_id, d.vendor_book_id)}</td>
+      <td colspan="7" style="padding:0;background:#f9f9f9">${buildEditForm(d.sel_id, d.vendor_book_id)}</td>
     </tr>`;
   }).join('');
 }
@@ -269,6 +272,26 @@ function toggleCheckEdit(selId, vendorBookId) {
   const row = document.getElementById('check-edit-row-' + selId);
   if (!row) return;
   row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+async function patchQuantity(selId, input) {
+  const qty = parseInt(input.value, 10);
+  if (!Number.isInteger(qty) || qty < 1) {
+    showToast('數量必須是整數且 >= 1');
+    await runCheck();
+    return;
+  }
+  try {
+    await api(`/api/selections/${selId}/quantity`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quantity: qty })
+    });
+    await runCheck();
+  } catch (e) {
+    showToast('更新失敗：' + e.message);
+    await runCheck();
+  }
 }
 
 async function removeBook(selId) {

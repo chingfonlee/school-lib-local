@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.auth import require_auth
 from app.services.selection_service import (
@@ -9,6 +9,7 @@ from app.services.selection_service import (
     remove_selection,
     clear_all_selections,
     update_selection_overrides,
+    update_selection_quantity,
 )
 
 router = APIRouter(prefix="/api/selections", tags=["selections"])
@@ -23,6 +24,10 @@ class SelectionUpsert(BaseModel):
 
 class OverridesPatch(BaseModel):
     overrides: dict
+
+
+class QuantityPatch(BaseModel):
+    quantity: int = Field(..., ge=1)
 
 
 @router.get("/")
@@ -63,6 +68,19 @@ async def delete_selection(
 ):
     try:
         result = remove_selection(selection_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
+
+
+@router.patch("/{selection_id}/quantity")
+async def patch_selection_quantity(
+    selection_id: int,
+    body: QuantityPatch,
+    user_id: int = Depends(require_auth),
+):
+    try:
+        result = update_selection_quantity(selection_id, body.quantity, user_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return result
