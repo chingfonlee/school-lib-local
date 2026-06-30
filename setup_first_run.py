@@ -46,7 +46,7 @@ def run_setup():
     print()
     print("  設定完成！")
     print(f"  登入帳號：admin")
-    print(f"  登入密碼：{password}")
+    print("  登入密碼：您剛才設定的密碼")
     print()
     print("  請記住您的密碼，日後登入時需要使用。")
     print("=" * 50)

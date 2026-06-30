@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -7,7 +9,15 @@ from app.config import get_config
 from app import database as db
 from app.routers import auth, projects, imports, books, selections, exports, holdings, backup, admin
 
-app = FastAPI(title="School Library Procurement")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.run_migrations()
+    db.ensure_initial_data()
+    yield
+
+
+app = FastAPI(title="School Library Procurement", lifespan=lifespan)
 
 cfg = get_config()
 app.add_middleware(SessionMiddleware, secret_key=cfg.session_secret_key)
@@ -21,12 +31,6 @@ app.include_router(exports.router)
 app.include_router(holdings.router)
 app.include_router(backup.router)
 app.include_router(admin.router)
-
-
-@app.on_event("startup")
-async def startup():
-    db.run_migrations()
-    db.ensure_initial_data()
 
 
 @app.get("/api/health")
