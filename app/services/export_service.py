@@ -1,10 +1,12 @@
 import json
 import shutil
+from copy import copy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 import openpyxl
+from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import column_index_from_string
 
 from app.database import get_connection
@@ -92,6 +94,58 @@ def _is_force_owned(book: dict) -> bool:
     return ov.get("force_owned") is True
 
 
+def _extend_data_rows(ws, template_row: int, insert_at: int, extra_rows: int) -> None:
+    if extra_rows <= 0:
+        return
+
+    ws.insert_rows(insert_at, extra_rows)
+    last_inserted_row = insert_at + extra_rows - 1
+    _unmerge_ranges_overlapping_rows(ws, insert_at, last_inserted_row)
+    _copy_row_style(ws, template_row, insert_at, last_inserted_row)
+
+
+def _unmerge_ranges_overlapping_rows(ws, first_row: int, last_row: int) -> None:
+    ranges_to_unmerge = [
+        copy(merged_range)
+        for merged_range in ws.merged_cells.ranges
+        if merged_range.min_row <= last_row and merged_range.max_row >= first_row
+    ]
+    for merged_range in ranges_to_unmerge:
+        ws.merged_cells.remove(merged_range)
+        for row, col in list(merged_range.cells)[1:]:
+            cell = ws._cells.get((row, col))
+            if isinstance(cell, MergedCell):
+                del ws._cells[(row, col)]
+
+
+def _copy_row_style(ws, source_row: int, first_target_row: int, last_target_row: int) -> None:
+    source_dim = ws.row_dimensions[source_row]
+    for row in range(first_target_row, last_target_row + 1):
+        target_dim = ws.row_dimensions[row]
+        target_dim.height = source_dim.height
+        target_dim.hidden = source_dim.hidden
+        target_dim.outlineLevel = source_dim.outlineLevel
+        target_dim.collapsed = source_dim.collapsed
+
+        for col_idx in range(1, ws.max_column + 1):
+            source_cell = ws.cell(source_row, col_idx)
+            target_cell = ws.cell(row, col_idx)
+            if source_cell.has_style:
+                target_cell._style = copy(source_cell._style)
+            if source_cell.number_format:
+                target_cell.number_format = source_cell.number_format
+            if source_cell.alignment:
+                target_cell.alignment = copy(source_cell.alignment)
+            if source_cell.font:
+                target_cell.font = copy(source_cell.font)
+            if source_cell.fill:
+                target_cell.fill = copy(source_cell.fill)
+            if source_cell.border:
+                target_cell.border = copy(source_cell.border)
+            if source_cell.protection:
+                target_cell.protection = copy(source_cell.protection)
+
+
 def export_local_culture(settings: ExportSettings) -> str:
     conn = get_connection()
     tmpl = _load_export_template_for_project(settings.project_id, conn)
@@ -159,7 +213,7 @@ def export_local_culture(settings: ExportSettings) -> str:
 
     extra_rows_needed = max(0, len(exportable) - (template_end - data_start + 1))
     if extra_rows_needed > 0:
-        ws.insert_rows(summary_row, extra_rows_needed)
+        _extend_data_rows(ws, template_end, summary_row, extra_rows_needed)
         summary_row += extra_rows_needed
 
     total_qty = 0
@@ -302,7 +356,7 @@ def export_general_books(settings: ExportSettings) -> str:
 
     extra_rows_needed = max(0, len(exportable) - (template_end - data_start + 1))
     if extra_rows_needed > 0:
-        ws.insert_rows(summary_row, extra_rows_needed)
+        _extend_data_rows(ws, template_end, summary_row, extra_rows_needed)
         summary_row += extra_rows_needed
 
     total_qty = 0
