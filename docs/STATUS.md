@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-export-footer-merged-format
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-07-01
 # Project Status
 
 ## Active Tasks
+
+- id: task-export-footer-merged-format
+  status: active
+  branch: fix/task-export-footer-merged-format
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-selection-add-page-owned-export
   status: done
