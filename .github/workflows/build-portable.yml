@@ -15,6 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set package filename
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            "PACKAGE_ZIP=school-lib-portable-${{ github.ref_name }}.zip" >> $env:GITHUB_ENV
+          } else {
+            $shortSha = "${{ github.sha }}".Substring(0, 7)
+            "PACKAGE_ZIP=school-lib-portable-$shortSha.zip" >> $env:GITHUB_ENV
+          }
+
       - name: Download Python 3.12 embeddable
         run: |
           $ver = "3.12.10"
@@ -52,17 +62,17 @@ jobs:
           Copy-Item start-portable.bat "$out\start.bat"
 
       - name: Create ZIP
-        run: Compress-Archive -Path school-lib-portable -DestinationPath school-lib-portable.zip
+        run: Compress-Archive -Path school-lib-portable -DestinationPath $env:PACKAGE_ZIP
 
       - name: Upload to GitHub Release
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" school-lib-portable.zip
+        run: gh release upload "${{ github.ref_name }}" $env:PACKAGE_ZIP
 
       - name: Upload artifact (for manual test run)
         uses: actions/upload-artifact@v4
         with:
           name: school-lib-portable
-          path: school-lib-portable.zip
+          path: ${{ env.PACKAGE_ZIP }}
           retention-days: 7
