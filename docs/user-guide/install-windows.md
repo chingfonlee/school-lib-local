@@ -21,7 +21,7 @@
 
 ### 步驟
 
-1. 前往 [GitHub Releases 頁面](https://github.com/chingfonlee/school-lib-local/releases/latest) 下載 **`school-lib-portable.zip`**
+1. 前往 [GitHub Releases 頁面](https://github.com/chingfonlee/school-lib-local/releases/latest) 下載最新版 **`school-lib-portable-v版本號.zip`**（例如 `school-lib-portable-v0.1.7.zip`）
 
 2. 解壓縮至任意資料夾（例如 `C:\圖書採購系統\`）
 
