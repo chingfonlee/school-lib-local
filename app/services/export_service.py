@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 from copy import copy
 from dataclasses import dataclass
@@ -92,6 +93,14 @@ def _resolve_eligibility_for_export(book: dict, project_type: str) -> str:
 def _is_force_owned(book: dict) -> bool:
     ov = json.loads(book.get("user_overrides") or "{}")
     return ov.get("force_owned") is True
+
+
+def _format_policy_topic_for_export(value: str | None) -> str | None:
+    if not value:
+        return None
+    parts = [p.strip() for p in re.split(r"[;；]", value)]
+    parts = [p for p in parts if p]
+    return "、".join(parts) if parts else None
 
 
 def _extend_data_rows(ws, template_row: int, insert_at: int, extra_rows: int) -> None:
@@ -429,7 +438,9 @@ def export_general_books(settings: ExportSettings) -> str:
         if "recommendation_source" in col_map:
             ws.cell(row=row, column=col("recommendation_source")).value = _resolve_field(book, "recommendation_source") or None
         if "policy_topic" in col_map:
-            ws.cell(row=row, column=col("policy_topic")).value = _resolve_field(book, "policy_topic") or None
+            ws.cell(row=row, column=col("policy_topic")).value = _format_policy_topic_for_export(
+                _resolve_field(book, "policy_topic")
+            )
         ws.cell(row=row, column=col("price")).value = price if price else None
         ws.cell(row=row, column=col("subtotal")).value = subtotal if subtotal else None
         if "award_notes" in col_map:
