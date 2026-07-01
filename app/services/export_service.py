@@ -98,10 +98,20 @@ def _extend_data_rows(ws, template_row: int, insert_at: int, extra_rows: int) ->
     if extra_rows <= 0:
         return
 
+    # openpyxl insert_rows does not shift row_dimensions; save footer heights manually.
+    footer_heights = {
+        row: dim.height
+        for row, dim in ws.row_dimensions.items()
+        if row >= insert_at and dim.height is not None
+    }
+    saved_footer = _pop_footer_merged_ranges(ws, insert_at)
     ws.insert_rows(insert_at, extra_rows)
     last_inserted_row = insert_at + extra_rows - 1
     _unmerge_ranges_overlapping_rows(ws, insert_at, last_inserted_row)
     _copy_row_style(ws, template_row, insert_at, last_inserted_row)
+    _push_footer_merged_ranges(ws, saved_footer, extra_rows)
+    for row, height in footer_heights.items():
+        ws.row_dimensions[row + extra_rows].height = height
 
 
 def _unmerge_ranges_overlapping_rows(ws, first_row: int, last_row: int) -> None:
@@ -116,6 +126,42 @@ def _unmerge_ranges_overlapping_rows(ws, first_row: int, last_row: int) -> None:
             cell = ws._cells.get((row, col))
             if isinstance(cell, MergedCell):
                 del ws._cells[(row, col)]
+
+
+def _pop_footer_merged_ranges(ws, insert_at: int) -> list[tuple[int, int, int, int]]:
+    """Save and remove merged ranges whose min_row >= insert_at (footer area).
+
+    Ranges that straddle insert_at (min_row < insert_at <= max_row) are left in
+    place and handled by _unmerge_ranges_overlapping_rows (conservative removal).
+    Returns list of (min_row, min_col, max_row, max_col) tuples.
+    """
+    to_save = [
+        copy(r)
+        for r in ws.merged_cells.ranges
+        if r.min_row >= insert_at
+    ]
+    saved = []
+    for r in to_save:
+        saved.append((r.min_row, r.min_col, r.max_row, r.max_col))
+        ws.merged_cells.remove(r)
+        for row, col in list(r.cells)[1:]:
+            cell = ws._cells.get((row, col))
+            if isinstance(cell, MergedCell):
+                del ws._cells[(row, col)]
+    return saved
+
+
+def _push_footer_merged_ranges(
+    ws, saved_ranges: list[tuple[int, int, int, int]], extra_rows: int
+) -> None:
+    """Rebuild footer merged ranges shifted down by extra_rows."""
+    for min_row, min_col, max_row, max_col in saved_ranges:
+        ws.merge_cells(
+            start_row=min_row + extra_rows,
+            start_column=min_col,
+            end_row=max_row + extra_rows,
+            end_column=max_col,
+        )
 
 
 def _copy_row_style(ws, source_row: int, first_target_row: int, last_target_row: int) -> None:

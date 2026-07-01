@@ -38,7 +38,7 @@
 
 ### 攜帶版（推薦，不需安裝 Python）
 
-1. 至 [Releases 頁面](https://github.com/chingfonlee/school-lib-local/releases/latest) 下載 **`school-lib-portable.zip`**
+1. 至 [Releases 頁面](https://github.com/chingfonlee/school-lib-local/releases/latest) 下載最新版 **`school-lib-portable-v版本號.zip`**（例如 `school-lib-portable-v0.1.7.zip`）
 2. 解壓縮至任意資料夾
 3. 雙擊 `start.bat`，首次啟動輸入登入密碼
 4. 瀏覽器自動開啟，以 `admin` 帳號登入
