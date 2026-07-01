@@ -1,11 +1,11 @@
 ---
-session_state: open
-current_action: executing
-current_task: task-export-policy-topic-delimiter
+session_state: closed
+current_action: idle
+current_task: ""
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
-last_agent: claude
+last_agent: codex
 updated: 2026-07-01
 ---
 
@@ -14,11 +14,11 @@ updated: 2026-07-01
 ## Active Tasks
 
 - id: task-export-policy-topic-delimiter
-  status: active
-  branch: fix/task-export-policy-topic-delimiter
+  status: done
+  branch: ""
   base_branch: main
-  last_log: ""
-  last_agent: ""
+  last_log: 2026-07-01-233811.md
+  last_agent: codex
 
 - id: task-export-footer-merged-format
   status: done
