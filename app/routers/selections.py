@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from app.auth import require_auth
 from app.services.selection_service import (
     upsert_selection,
+    bulk_add_selections,
     get_selection_summary,
     get_selected_books,
     remove_selection,
@@ -28,6 +29,29 @@ class OverridesPatch(BaseModel):
 
 class QuantityPatch(BaseModel):
     quantity: int = Field(..., ge=1)
+
+
+class BulkSelectionItem(BaseModel):
+    vendor_book_id: int
+    force_owned: bool = False
+
+
+class BulkSelectionRequest(BaseModel):
+    project_id: int
+    items: list[BulkSelectionItem]
+
+
+@router.post("/bulk")
+async def bulk_update_selection(
+    body: BulkSelectionRequest,
+    user_id: int = Depends(require_auth),
+):
+    result = bulk_add_selections(
+        body.project_id,
+        [i.model_dump() for i in body.items],
+        user_id,
+    )
+    return result
 
 
 @router.get("/")

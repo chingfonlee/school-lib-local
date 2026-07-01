@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-selection-add-page-owned-export
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-07-01
 # Project Status
 
 ## Active Tasks
+
+- id: task-selection-add-page-owned-export
+  status: active
+  branch: feat/task-selection-add-page-owned-export
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-export-check-quantity-edit
   status: done

@@ -87,6 +87,11 @@ def _resolve_eligibility_for_export(book: dict, project_type: str) -> str:
     return value
 
 
+def _is_force_owned(book: dict) -> bool:
+    ov = json.loads(book.get("user_overrides") or "{}")
+    return ov.get("force_owned") is True
+
+
 def export_local_culture(settings: ExportSettings) -> str:
     conn = get_connection()
     tmpl = _load_export_template_for_project(settings.project_id, conn)
@@ -140,19 +145,17 @@ def export_local_culture(settings: ExportSettings) -> str:
         ") AS match_status "
         "FROM selection_items si "
         "WHERE si.project_id = ? AND si.selected_quantity > 0 "
-        "  AND COALESCE("
-        "    (SELECT bm.match_status FROM book_matches bm "
-        "     WHERE bm.vendor_book_id = si.vendor_book_id "
-        "       AND bm.match_status != 'same_title_different_isbn' "
-        "     ORDER BY bm.id DESC LIMIT 1), "
-        "    si.match_status_at_selection, 'available'"
-        "  ) IN ('available', 'missing_isbn', 'invalid_isbn') "
         "ORDER BY si.vendor_seq, si.id",
         (settings.project_id,),
     ).fetchall()
     conn.close()
 
-    exportable = [dict(b) for b in books]
+    all_books = [dict(b) for b in books]
+    exportable = [
+        b for b in all_books
+        if b["match_status"] in ("available", "missing_isbn", "invalid_isbn")
+        or (b["match_status"] == "already_owned" and _is_force_owned(b))
+    ]
 
     extra_rows_needed = max(0, len(exportable) - (template_end - data_start + 1))
     if extra_rows_needed > 0:
@@ -285,19 +288,17 @@ def export_general_books(settings: ExportSettings) -> str:
         ") AS match_status "
         "FROM selection_items si "
         "WHERE si.project_id = ? AND si.selected_quantity > 0 "
-        "  AND COALESCE("
-        "    (SELECT bm.match_status FROM book_matches bm "
-        "     WHERE bm.vendor_book_id = si.vendor_book_id "
-        "       AND bm.match_status != 'same_title_different_isbn' "
-        "     ORDER BY bm.id DESC LIMIT 1), "
-        "    si.match_status_at_selection, 'available'"
-        "  ) IN ('available', 'missing_isbn', 'invalid_isbn') "
         "ORDER BY si.vendor_seq, si.id",
         (settings.project_id,),
     ).fetchall()
     conn.close()
 
-    exportable = [dict(b) for b in books]
+    all_books = [dict(b) for b in books]
+    exportable = [
+        b for b in all_books
+        if b["match_status"] in ("available", "missing_isbn", "invalid_isbn")
+        or (b["match_status"] == "already_owned" and _is_force_owned(b))
+    ]
 
     extra_rows_needed = max(0, len(exportable) - (template_end - data_start + 1))
     if extra_rows_needed > 0:

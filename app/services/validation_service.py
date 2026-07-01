@@ -114,7 +114,9 @@ def check_export_readiness(project_id: int, price_field: str) -> dict:
             if not _resolve(r, "award_item", overrides):
                 missing_review.append("獲獎項目")
 
-        can_export = len(missing_blocking) == 0 and match_status != "already_owned"
+        can_export = len(missing_blocking) == 0 and (
+            match_status != "already_owned" or _is_force_owned(overrides)
+        )
 
         if not can_export:
             if match_status != "already_owned":
@@ -145,6 +147,10 @@ def check_export_readiness(project_id: int, price_field: str) -> dict:
         "already_owned": already_owned_count,
         "details": details,
     }
+
+
+def _is_force_owned(overrides: dict) -> bool:
+    return overrides.get("force_owned") is True
 
 
 def _resolve(row, field: str, overrides: dict) -> str:

@@ -114,6 +114,7 @@
       <option value="title">書名</option>
     </select>
     <button class="btn btn-secondary btn-sm" onclick="resetFilters()">重設篩選</button>
+    <button class="btn btn-secondary btn-sm" id="btn-add-page" onclick="addCurrentPage()">加入本頁</button>
     <span id="result-count" style="font-size:13px;color:#666"></span>
   </div>
 
@@ -140,7 +141,7 @@ let projectType = null;
 let allBooks = [];
 let selMap = {};
 let selIdMap = {};
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 50;
 let currentPage = 1;
 let filteredBooks = [];
 
@@ -331,6 +332,8 @@ function applyFilter() {
   currentPage = 1;
   updateResultCount();
   renderCurrentPage();
+  const btnAddPage = document.getElementById('btn-add-page');
+  if (btnAddPage) btnAddPage.disabled = filteredBooks.length === 0;
 }
 
 function renderCurrentPage() {
@@ -456,6 +459,49 @@ function render(books) {
       </div>
     </div>`;
   }).join('');
+}
+
+async function addCurrentPage() {
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageBooks = filteredBooks.slice(start, start + PAGE_SIZE);
+  const toAdd = pageBooks.filter(b => !selMap[b.id]);
+  if (!toAdd.length) { showToast('本頁書目已全部加入清單'); return; }
+
+  const ownedCount = toAdd.filter(
+    b => getEffectiveMatchStatus(b) === 'already_owned'
+  ).length;
+
+  if (ownedCount > 0) {
+    const ok = confirm(
+      `本頁有 ${ownedCount} 本已館藏書目，確認仍要採購並加入選書清單嗎？`
+    );
+    if (!ok) return;
+  }
+
+  const btn = document.getElementById('btn-add-page');
+  btn.disabled = true;
+  btn.textContent = '處理中…';
+
+  try {
+    const items = toAdd.map(b => ({
+      vendor_book_id: b.id,
+      force_owned: getEffectiveMatchStatus(b) === 'already_owned',
+    }));
+    const result = await api('/api/selections/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: pid, items }),
+    });
+    toAdd.forEach(b => { selMap[b.id] = 1; });
+    await refreshBudget();
+    renderCurrentPage();
+    showToast(`已加入 ${result.added} 本，略過 ${result.skipped} 本（已在清單）`);
+  } catch (e) {
+    showToast('加入失敗：' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '加入本頁';
+  }
 }
 
 async function addBook(bookId) {
