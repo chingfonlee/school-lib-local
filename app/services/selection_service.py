@@ -10,6 +10,7 @@ def upsert_selection(
     quantity: int,
     notes: str | None,
     user_id: int,
+    force_owned: bool = False,
 ) -> dict:
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
@@ -109,7 +110,7 @@ def upsert_selection(
                 completeness,
                 snap.get("match_status"),
                 snap.get("holding_id"),
-                None,
+                json.dumps({"force_owned": True}, ensure_ascii=False) if force_owned else None,
                 snap.get("extra_fields"),
                 snap.get("raw_row"),
                 user_id,
@@ -254,6 +255,44 @@ def update_selection_overrides(
     conn.commit()
     conn.close()
     return {"selection_id": selection_id, "user_overrides": merged}
+
+
+def bulk_add_selections(
+    project_id: int,
+    items: list[dict],
+    user_id: int,
+) -> dict:
+    conn = get_connection()
+    existing_ids = {
+        row["vendor_book_id"]
+        for row in conn.execute(
+            "SELECT vendor_book_id FROM selection_items WHERE project_id = ?",
+            (project_id,),
+        ).fetchall()
+    }
+    conn.close()
+
+    added = 0
+    skipped = 0
+    for item in items:
+        vbid = item["vendor_book_id"]
+        if vbid in existing_ids:
+            skipped += 1
+            continue
+        try:
+            upsert_selection(
+                project_id,
+                vbid,
+                1,
+                None,
+                user_id,
+                force_owned=item.get("force_owned", False),
+            )
+            added += 1
+        except ValueError:
+            skipped += 1
+
+    return {"added": added, "skipped": skipped}
 
 
 def _resolve_price(db_val, override_val) -> float | None:

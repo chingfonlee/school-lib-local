@@ -13,6 +13,13 @@ updated: 2026-07-01
 
 ## Active Tasks
 
+- id: task-selection-add-page-owned-export
+  status: done
+  branch: ""
+  base_branch: main
+  last_log: 2026-07-01-111011.md
+  last_agent: claude
+
 - id: task-export-check-quantity-edit
   status: done
   branch: ""
