@@ -176,13 +176,15 @@ def test_missing_export_template_error_points_to_template_management():
             """
             CREATE TABLE procurement_projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_type TEXT NOT NULL,
                 export_template_type TEXT NOT NULL
             );
             CREATE TABLE export_templates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_type TEXT NOT NULL
             );
-            INSERT INTO procurement_projects(export_template_type) VALUES ('local_culture_jh');
+            INSERT INTO procurement_projects(project_type, export_template_type)
+            VALUES ('local_culture_jh', 'local_culture_jh');
             """
         )
 

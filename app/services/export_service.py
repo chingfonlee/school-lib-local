@@ -42,7 +42,7 @@ class ExportSettings:
 def _load_export_template_for_project(project_id: int, conn) -> dict:
     """Look up the export template for a project by its export_template_type."""
     project = conn.execute(
-        "SELECT export_template_type FROM procurement_projects WHERE id = ?",
+        "SELECT project_type, export_template_type FROM procurement_projects WHERE id = ?",
         (project_id,),
     ).fetchone()
     if project is None:
@@ -56,7 +56,9 @@ def _load_export_template_for_project(project_id: int, conn) -> dict:
             f"找不到匯出範本（project_type={project['export_template_type']}）"
             "，請至導覽列「範本管理」確認範本已設定。"
         )
-    return dict(tmpl)
+    result = dict(tmpl)
+    result["_project_type"] = project["project_type"]
+    return result
 
 
 def _resolve_field(book: dict, field: str) -> str:
@@ -76,6 +78,13 @@ def _get_price(book: dict, price_field: str) -> float:
         return float(val)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _resolve_eligibility_for_export(book: dict, project_type: str) -> str:
+    value = _resolve_field(book, "eligibility_label")
+    if project_type == "general_books_jh" and value == "推薦":
+        return "必選"
+    return value
 
 
 def export_local_culture(settings: ExportSettings) -> str:
@@ -229,6 +238,7 @@ def export_general_books(settings: ExportSettings) -> str:
         return column_index_from_string(col_map[key])
 
     template_path = tmpl["template_file_path"]
+    project_type = tmpl.get("_project_type") or ""
     sheet_name = tmpl.get("sheet_name") or ""
     data_start = tmpl["data_start_row"]
     max_rows = tmpl["max_rows"]
@@ -306,7 +316,7 @@ def export_general_books(settings: ExportSettings) -> str:
         price = _get_price(book, settings.price_field)
         subtotal = quantity * price
 
-        ws.cell(row=row, column=col("eligibility_label")).value = _resolve_field(book, "eligibility_label") or None
+        ws.cell(row=row, column=col("eligibility_label")).value = _resolve_eligibility_for_export(book, project_type) or None
         ws.cell(row=row, column=col("sort_order")).value = i + 1
         ws.cell(row=row, column=col("title")).value = _resolve_field(book, "title")
         ws.cell(row=row, column=col("author")).value = _resolve_field(book, "author") or None
