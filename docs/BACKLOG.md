@@ -91,7 +91,7 @@
 
 ### 階段 2：全校共用書單資料庫＋多書商增量更新與跨書商比價（模式 B）
 
-- status: planning
+- status: done
 - priority: high
 - type: feat
 - task-id: task-shared-vendor-catalog-upsert
@@ -99,18 +99,19 @@
 - description:
   將書商書單升級為全校共用長期書單池（`import_batches.project_id` 允許為 `NULL` 並新增 `vendor_name`），向後相容既有專案舊資料；支援「新增／依 ISBN 增量更新（保留老師既有 `user_overrides` 與獲獎整理）」與「取代指定書商」雙模式；選書頁與比對頁支援依書商篩選、跨書商同 ISBN 比價提示（`other_vendor_offers`）、區分他案已匯出與選書中狀態，以及上傳書單後依表頭重疊度自動推薦既有 `import_profiles`。
 - decision:
-  已合併原階段 2 與原階段 4，進入 task-planning。
+  已完成並合併至 main。
 
 ### 階段 3：學校館藏增量匯入與已採購回流
 
-- status: idea
+- status: planning
 - priority: medium
 - type: feat
+- task-id: task-holdings-incremental-and-xls-resilience
 - source: 使用者希望學校藏書能隨新書入館持續更新，避免剛買完的書在下個計畫又重複採購
 - description:
   館藏匯入支援「全校完整覆蓋」與「增量追加（依 ISBN + 登錄號去重）」雙模式；專案匯出完成後提供一鍵將已採購書目記入待入館／館藏清單；補強 HTML 偽裝 `.xls`、貨幣格式（`NT$`/`元`）與無 ISBN 書目的書名＋作者弱比對提示。
 - decision:
-  排於階段 2 之後評估開立 task。
+  已進入 task-planning。
 
 ## 查詢提示詞範例
 
