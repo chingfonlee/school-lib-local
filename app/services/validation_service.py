@@ -98,7 +98,14 @@ def check_export_readiness(project_id: int, price_field: str) -> dict[str, Any]:
         if r["selected_quantity"] <= 0:
             missing_blocking.append("採購數量")
 
-        if project_type in ("general_books", "general_books_jh"):
+        if project_type == "custom":
+            if not _resolve(r, "author", overrides):
+                missing_review.append("作者")
+            if not _resolve(r, "publisher", overrides):
+                missing_review.append("出版社")
+            if r["isbn_status"] != "valid":
+                missing_review.append("ISBN")
+        elif project_type in ("general_books", "general_books_jh"):
             eligibility_col = "B" if project_type == "general_books_jh" else "A"
             recommendation_col = "K" if project_type == "general_books_jh" else "H"
             eligibility = _resolve(r, "eligibility_label", overrides)

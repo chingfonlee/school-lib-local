@@ -10,13 +10,40 @@ from app.logging_config import get_logger
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 logger = get_logger("projects")
 
+VALID_PROJECT_TYPES = (
+    "local_culture",
+    "general_books",
+    "local_culture_jh",
+    "general_books_jh",
+    "custom",
+)
+VALID_EXPORT_TEMPLATE_TYPES = (
+    "generic_builtin",
+    "local_culture",
+    "general_books",
+    "local_culture_jh",
+    "general_books_jh",
+)
+
+
+def _clean_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned if cleaned else None
+
 
 class ProjectCreate(BaseModel):
     name: str
     project_type: str = "local_culture"
     budget_amount: float | None = None
+    export_template_type: str | None = None
     price_field: str = "purchase_price"
     subtotal_mode: str = "quantity_times_purchase_price"
+    academic_year: str | None = None
+    funding_source: str | None = None
+    project_notes: str | None = None
+    is_archived: bool = False
 
     @field_validator("budget_amount")
     @classmethod
@@ -29,8 +56,13 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: str | None = None
     budget_amount: float | None = None
+    export_template_type: str | None = None
     price_field: str | None = None
     subtotal_mode: str | None = None
+    academic_year: str | None = None
+    funding_source: str | None = None
+    project_notes: str | None = None
+    is_archived: bool | None = None
 
     @field_validator("budget_amount")
     @classmethod
@@ -72,35 +104,55 @@ async def list_projects(user_id: int = Depends(require_auth)):
             "   WHERE si2.project_id = p.id AND si2.selected_quantity > 0), "
             "  0"
             ") as selection_amount "
-            "FROM procurement_projects p ORDER BY p.created_at DESC"
+            "FROM procurement_projects p ORDER BY p.is_archived ASC, p.created_at DESC"
         ).fetchall()
     return [dict(r) for r in rows]
 
 
 @router.post("/")
 async def create_project(body: ProjectCreate, user_id: int = Depends(require_auth)):
-    if body.project_type not in ("local_culture", "general_books", "local_culture_jh", "general_books_jh"):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="專案名稱不可為空")
+    if body.project_type not in VALID_PROJECT_TYPES:
         raise HTTPException(status_code=400, detail="無效的 project_type")
+
+    resolved_template_type = _clean_optional_text(body.export_template_type)
+    if resolved_template_type is None:
+        resolved_template_type = "generic_builtin" if body.project_type == "custom" else body.project_type
+    if resolved_template_type not in VALID_EXPORT_TEMPLATE_TYPES:
+        raise HTTPException(status_code=400, detail="無效的 export_template_type")
+
+    academic_year = _clean_optional_text(body.academic_year)
+    funding_source = _clean_optional_text(body.funding_source)
+    project_notes = _clean_optional_text(body.project_notes)
+    is_archived = 1 if body.is_archived else 0
+
     now = datetime.now(timezone.utc).isoformat()
     with db_session(get_connection) as conn:
         row = conn.execute(
             "INSERT INTO procurement_projects"
             "(name, project_type, budget_amount, export_template_type, price_field, subtotal_mode, "
-            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "academic_year, funding_source, project_notes, is_archived, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                body.name,
+                name,
                 body.project_type,
                 body.budget_amount,
-                body.project_type,
+                resolved_template_type,
                 body.price_field,
                 body.subtotal_mode,
+                academic_year,
+                funding_source,
+                project_notes,
+                is_archived,
                 now,
                 now,
             ),
         )
         project_id = row.lastrowid
         conn.commit()
-    return {"id": project_id}
+    return {"id": project_id, "name": name}
 
 
 @router.get("/{project_id}")
@@ -211,22 +263,44 @@ async def update_project(project_id: int, body: ProjectUpdate, user_id: int = De
 
         updates = dict(existing)
         if body.name is not None:
-            updates["name"] = body.name
+            cleaned_name = body.name.strip()
+            if not cleaned_name:
+                raise HTTPException(status_code=400, detail="專案名稱不可為空")
+            updates["name"] = cleaned_name
         if "budget_amount" in body.model_fields_set:
             updates["budget_amount"] = body.budget_amount
+        if body.export_template_type is not None:
+            cleaned_tmpl = _clean_optional_text(body.export_template_type)
+            if cleaned_tmpl not in VALID_EXPORT_TEMPLATE_TYPES:
+                raise HTTPException(status_code=400, detail="無效的 export_template_type")
+            updates["export_template_type"] = cleaned_tmpl
         if body.price_field is not None:
             updates["price_field"] = body.price_field
         if body.subtotal_mode is not None:
             updates["subtotal_mode"] = body.subtotal_mode
+        if "academic_year" in body.model_fields_set:
+            updates["academic_year"] = _clean_optional_text(body.academic_year)
+        if "funding_source" in body.model_fields_set:
+            updates["funding_source"] = _clean_optional_text(body.funding_source)
+        if "project_notes" in body.model_fields_set:
+            updates["project_notes"] = _clean_optional_text(body.project_notes)
+        if body.is_archived is not None:
+            updates["is_archived"] = 1 if body.is_archived else 0
 
         conn.execute(
-            "UPDATE procurement_projects SET name=?, budget_amount=?, price_field=?, "
-            "subtotal_mode=?, updated_at=? WHERE id=?",
+            "UPDATE procurement_projects SET name=?, budget_amount=?, export_template_type=?, "
+            "price_field=?, subtotal_mode=?, academic_year=?, funding_source=?, project_notes=?, "
+            "is_archived=?, updated_at=? WHERE id=?",
             (
                 updates["name"],
                 updates["budget_amount"],
+                updates["export_template_type"],
                 updates["price_field"],
                 updates["subtotal_mode"],
+                updates.get("academic_year"),
+                updates.get("funding_source"),
+                updates.get("project_notes"),
+                updates.get("is_archived", 0),
                 now,
                 project_id,
             ),

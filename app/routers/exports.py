@@ -5,7 +5,12 @@ from pydantic import BaseModel
 from app.auth import require_auth
 from app.config import get_config
 from app.database import db_session, get_connection
-from app.services.export_service import ExportSettings, export_general_books, export_local_culture
+from app.services.export_service import (
+    ExportSettings,
+    export_general_books,
+    export_generic_books,
+    export_local_culture,
+)
 from app.services.import_service import commit_project_selections_to_holdings
 from app.services.validation_service import check_export_readiness
 
@@ -36,7 +41,7 @@ async def do_export(body: ExportRequest, user_id: int = Depends(require_auth)):
     cfg = get_config()
     with db_session(get_connection) as conn:
         project = conn.execute(
-            "SELECT project_type FROM procurement_projects WHERE id = ?",
+            "SELECT project_type, export_template_type FROM procurement_projects WHERE id = ?",
             (body.project_id,),
         ).fetchone()
     if project is None:
@@ -50,8 +55,13 @@ async def do_export(body: ExportRequest, user_id: int = Depends(require_auth)):
         output_dir=cfg.export_output_dir,
         exported_by=user_id,
     )
+    template_type = project["export_template_type"] or (
+        "generic_builtin" if project["project_type"] == "custom" else project["project_type"]
+    )
     try:
-        if project["project_type"] in ("general_books", "general_books_jh"):
+        if template_type == "generic_builtin":
+            job_id = export_generic_books(settings)
+        elif template_type in ("general_books", "general_books_jh"):
             job_id = export_general_books(settings)
         else:
             job_id = export_local_culture(settings)

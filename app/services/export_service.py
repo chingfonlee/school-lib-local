@@ -9,6 +9,7 @@ import uuid
 
 import openpyxl
 from openpyxl.cell.cell import MergedCell
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import column_index_from_string
 
 from app.database import db_session, get_connection
@@ -535,6 +536,198 @@ def export_general_books(settings: ExportSettings) -> str:
                 len(exportable),
                 total_amount,
                 tmpl["id"],
+            ),
+        )
+        job_id = row_result.lastrowid
+        conn.commit()
+
+    return str(job_id)
+
+
+GENERIC_HEADERS = ("序號", "書名", "作者", "出版社", "ISBN", "數量", "單價", "小計", "備註")
+GENERIC_COL_WIDTHS = (8, 34, 18, 20, 18, 10, 12, 14, 24)
+
+
+def export_generic_books(settings: ExportSettings) -> str:
+    with db_session(get_connection) as conn:
+        project_row = conn.execute(
+            "SELECT * FROM procurement_projects WHERE id = ?",
+            (settings.project_id,),
+        ).fetchone()
+        if project_row is None:
+            raise ValueError("採購專案不存在")
+        project = dict(project_row)
+        books = _fetch_selection_items_for_export(conn, settings.project_id)
+
+    all_books = [dict(b) for b in books]
+    exportable = [
+        b
+        for b in all_books
+        if b["match_status"] in ("available", "missing_isbn", "invalid_isbn")
+        or (b["match_status"] == "already_owned" and _is_force_owned(b))
+    ]
+
+    Path(settings.output_dir).mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    out_filename = f"通用採購書單_{ts}_{uuid.uuid4().hex[:6]}.xlsx"
+    out_path = str(Path(settings.output_dir) / out_filename)
+
+    thin_side = Side(style="thin", color="CCCCCC")
+    cell_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    header_fill = PatternFill(start_color="E8F0FE", end_color="E8F0FE", fill_type="solid")
+    summary_fill = PatternFill(start_color="F5F5F7", end_color="F5F5F7", fill_type="solid")
+    title_font = Font(name="Microsoft JhengHei", size=14, bold=True)
+    info_font = Font(name="Microsoft JhengHei", size=10, color="555555")
+    header_font = Font(name="Microsoft JhengHei", size=11, bold=True)
+    body_font = Font(name="Microsoft JhengHei", size=10)
+    summary_font = Font(name="Microsoft JhengHei", size=11, bold=True)
+
+    wb = None
+    total_qty = 0
+    total_amount = 0.0
+    try:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "採購書單"
+
+        # Title row
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(GENERIC_HEADERS))
+        title_cell = ws.cell(row=1, column=1, value=project.get("name") or "採購書單")
+        title_cell.font = title_font
+        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 28
+
+        # Project info row (only include non-empty items)
+        info_parts: list[str] = []
+        school_name = (settings.school_name or "").strip()
+        if school_name:
+            info_parts.append(f"校名：{school_name}")
+        academic_year = (project.get("academic_year") or "").strip()
+        if academic_year:
+            info_parts.append(f"年度：{academic_year}")
+        funding_source = (project.get("funding_source") or "").strip()
+        if funding_source:
+            info_parts.append(f"經費來源：{funding_source}")
+        effective_budget = (
+            settings.approved_budget if settings.approved_budget is not None else project.get("budget_amount")
+        )
+        if effective_budget is not None:
+            info_parts.append(f"核定金額：新臺幣 {effective_budget:,.0f} 元")
+
+        current_row = 2
+        if info_parts:
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(GENERIC_HEADERS))
+            info_cell = ws.cell(row=current_row, column=1, value="  ｜  ".join(info_parts))
+            info_cell.font = info_font
+            info_cell.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[current_row].height = 20
+            current_row += 1
+
+        # Header row
+        header_row = current_row
+        for col_idx, heading in enumerate(GENERIC_HEADERS, start=1):
+            c = ws.cell(row=header_row, column=col_idx, value=heading)
+            c.font = header_font
+            c.fill = header_fill
+            c.border = cell_border
+            c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[header_row].height = 24
+        current_row += 1
+
+        # Data rows
+        for i, book in enumerate(exportable):
+            quantity = book["selected_quantity"]
+            price = _get_price(book, settings.price_field)
+            if settings.subtotal_mode == "quantity_times_list_price":
+                subtotal = quantity * _get_price(book, "list_price")
+            else:
+                subtotal = quantity * _get_price(book, "purchase_price")
+
+            isbn_val = _resolve_field(book, "isbn_normalized") or _resolve_field(book, "isbn")
+            row_values = (
+                i + 1,
+                _resolve_field(book, "title"),
+                _resolve_field(book, "author") or None,
+                _resolve_field(book, "publisher") or None,
+                str(isbn_val) if isbn_val else None,
+                quantity,
+                price if price else None,
+                subtotal if subtotal else None,
+                _resolve_field(book, "notes") or None,
+            )
+            for col_idx, val in enumerate(row_values, start=1):
+                c = ws.cell(row=current_row, column=col_idx, value=val)
+                c.font = body_font
+                c.border = cell_border
+                if col_idx == 1:
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_idx == 5:
+                    c.number_format = "@"
+                    c.alignment = Alignment(horizontal="left", vertical="center")
+                elif col_idx in (6, 7, 8):
+                    c.number_format = "#,##0"
+                    c.alignment = Alignment(horizontal="right", vertical="center")
+                else:
+                    c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+            total_qty += quantity
+            total_amount += subtotal
+            current_row += 1
+
+        # Summary row
+        summary_row = current_row
+        ws.merge_cells(start_row=summary_row, start_column=1, end_row=summary_row, end_column=5)
+        for col_idx in range(1, len(GENERIC_HEADERS) + 1):
+            c = ws.cell(row=summary_row, column=col_idx)
+            c.font = summary_font
+            c.fill = summary_fill
+            c.border = cell_border
+            c.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.cell(row=summary_row, column=1, value="合計").alignment = Alignment(horizontal="right", vertical="center")
+        qty_cell = ws.cell(row=summary_row, column=6, value=total_qty)
+        qty_cell.number_format = "#,##0"
+        qty_cell.alignment = Alignment(horizontal="right", vertical="center")
+        amt_cell = ws.cell(row=summary_row, column=8, value=total_amount)
+        amt_cell.number_format = "#,##0"
+        amt_cell.alignment = Alignment(horizontal="right", vertical="center")
+        ws.row_dimensions[summary_row].height = 24
+
+        for col_idx, width in enumerate(GENERIC_COL_WIDTHS, start=1):
+            col_letter = openpyxl.utils.get_column_letter(col_idx)
+            ws.column_dimensions[col_letter].width = width
+
+        wb.save(out_path)
+    except Exception:
+        if wb is not None:
+            wb.close()
+        Path(out_path).unlink(missing_ok=True)
+        raise
+    else:
+        wb.close()
+
+    now = datetime.now(timezone.utc).isoformat()
+    with db_session(get_connection) as conn:
+        row_result = conn.execute(
+            "INSERT INTO export_jobs"
+            "(project_id, school_name, approved_budget, price_field, subtotal_mode, "
+            "template_path, output_filename, output_path, exported_by, exported_at, "
+            "record_count, total_amount, export_template_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                settings.project_id,
+                settings.school_name,
+                settings.approved_budget,
+                settings.price_field,
+                settings.subtotal_mode,
+                "generic_builtin",
+                out_filename,
+                out_path,
+                settings.exported_by,
+                now,
+                len(exportable),
+                total_amount,
+                None,
             ),
         )
         job_id = row_result.lastrowid

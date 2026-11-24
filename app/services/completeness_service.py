@@ -29,6 +29,11 @@ def compute(
     author = _get(book, "author", overrides)
     publisher = _get(book, "publisher", overrides)
 
+    if project_type == "custom":
+        if not author or not publisher:
+            return "needs_review"
+        return "export_ready"
+
     if project_type in ("general_books", "general_books_jh"):
         eligibility_label = _get(book, "eligibility_label", overrides)
         recommendation_source = _get(book, "recommendation_source", overrides)
