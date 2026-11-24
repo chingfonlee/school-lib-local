@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-holdings-incremental-and-xls-resilience
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-11-24
 # Project Status
 
 ## Active Tasks
+
+- id: task-holdings-incremental-and-xls-resilience
+  status: active
+  branch: feat/task-holdings-incremental-and-xls-resilience
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-shared-vendor-catalog-upsert
   status: done
