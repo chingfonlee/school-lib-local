@@ -26,6 +26,12 @@
 <script>
 document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
+if (new URLSearchParams(window.location.search).get('expired') === '1') {
+  const alertEl = document.getElementById('alert');
+  alertEl.textContent = '登入已逾時，請重新登入';
+  alertEl.style.display = 'block';
+}
+
 async function waitReady() {
   for (let i = 0; i < 20; i++) {
     try {
@@ -49,8 +55,8 @@ async function doLogin() {
       body: JSON.stringify({ username: u, password: p })
     });
     if (!res.ok) {
-      const err = await res.json();
-      alert.textContent = err.detail || '登入失敗';
+      const err = await res.json().catch(() => ({}));
+      alert.textContent = (typeof err.detail === 'string' && err.detail) ? err.detail : '登入失敗';
       alert.style.display = 'block';
       return;
     }
