@@ -1,5 +1,6 @@
-import json
+from html.parser import HTMLParser
 import io
+import json
 import math
 import re
 from datetime import datetime, timezone
@@ -8,12 +9,139 @@ import pandas as pd
 
 from app.database import db_session, get_connection
 from app.services.award_normalization_service import group_normalize
-from app.services.isbn_service import normalize_isbn, get_isbn_status
 from app.services.completeness_service import compute as compute_completeness
-from app.services.match_service import run_match
+from app.services.isbn_service import get_isbn_status, normalize_isbn
+from app.services.match_service import normalize_title_for_match, run_match
 
 DEFAULT_VENDOR_NAME = "未指定書商"
 VALID_IMPORT_MODES = {"upsert", "replace_vendor"}
+VALID_HOLDINGS_IMPORT_MODES = {"replace", "append"}
+
+_ZIP_MAGIC = b"PK\x03\x04"
+_OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_HTML_MARKERS = (b"<html", b"<!doctype", b"<table")
+_HTML_ENCODINGS = ("utf-8-sig", "cp950", "big5", "gb18030")
+_CURRENCY_CLEAN_RE = re.compile(
+    r"(?:nt\$|ntd|tw\$|新台幣|新臺幣|[\$＄,，\s\u3000元整])+",
+    re.IGNORECASE,
+)
+
+
+class _HtmlTableParser(HTMLParser):
+    """Lightweight stdlib HTML table parser for HTML-disguised .xls exports."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tables: list[list[list[str]]] = []
+        self._table_stack: list[list[list[str]]] = []
+        self._current_row: list[str] | None = None
+        self._in_cell = False
+        self._cell_buf: list[str] = []
+        self._cell_colspan = 1
+
+    def _finish_cell(self) -> None:
+        if not self._in_cell:
+            return
+        text = "".join(self._cell_buf).replace("\xa0", " ").strip()
+        if self._current_row is not None:
+            self._current_row.append(text)
+            if self._cell_colspan > 1:
+                self._current_row.extend([""] * (self._cell_colspan - 1))
+        self._in_cell = False
+        self._cell_buf = []
+        self._cell_colspan = 1
+
+    def _finish_row(self) -> None:
+        self._finish_cell()
+        if self._current_row is not None and self._table_stack:
+            if self._current_row:
+                self._table_stack[-1].append(self._current_row)
+        self._current_row = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        t = tag.lower()
+        if t == "table":
+            self._finish_cell()
+            self._table_stack.append([])
+        elif t == "tr" and self._table_stack:
+            self._finish_row()
+            self._current_row = []
+        elif t in ("td", "th") and self._table_stack:
+            if self._current_row is None:
+                self._current_row = []
+            self._finish_cell()
+            self._in_cell = True
+            self._cell_buf = []
+            colspan = 1
+            for k, v in attrs:
+                if k.lower() == "colspan" and v:
+                    try:
+                        colspan = max(1, min(int(str(v).strip()), 100))
+                    except ValueError:
+                        colspan = 1
+            self._cell_colspan = colspan
+        elif t == "br" and self._in_cell:
+            self._cell_buf.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        t = tag.lower()
+        if t in ("td", "th"):
+            self._finish_cell()
+        elif t == "tr":
+            self._finish_row()
+        elif t == "table" and self._table_stack:
+            self._finish_row()
+            table = self._table_stack.pop()
+            if table:
+                self.tables.append(table)
+
+    def handle_data(self, data: str) -> None:
+        if self._in_cell:
+            self._cell_buf.append(data)
+
+    def close(self) -> None:
+        super().close()
+        self._finish_row()
+        while self._table_stack:
+            table = self._table_stack.pop()
+            if table:
+                self.tables.append(table)
+
+
+def _is_html_table_bytes(file_bytes: bytes) -> bool:
+    if not file_bytes:
+        return False
+    if file_bytes.startswith(_ZIP_MAGIC) or file_bytes.startswith(_OLE2_MAGIC):
+        return False
+    head = file_bytes[:4096].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    return any(marker in head for marker in _HTML_MARKERS)
+
+
+def _decode_html_bytes(file_bytes: bytes) -> str:
+    for enc in _HTML_ENCODINGS:
+        try:
+            return file_bytes.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return file_bytes.decode("utf-8", errors="replace")
+
+
+def _parse_html_tables(file_bytes: bytes) -> list[list[list[str]]]:
+    html_text = _decode_html_bytes(file_bytes)
+    parser = _HtmlTableParser()
+    parser.feed(html_text)
+    parser.close()
+    return parser.tables
+
+
+def _detect_file_engine(file_bytes: bytes, filename: str) -> str:
+    if file_bytes.startswith(_ZIP_MAGIC):
+        return "openpyxl"
+    if file_bytes.startswith(_OLE2_MAGIC):
+        return "xlrd"
+    if _is_html_table_bytes(file_bytes):
+        return "html"
+    return "xlrd" if (filename or "").lower().endswith(".xls") else "openpyxl"
 
 
 def normalize_vendor_name(vendor_name: str | None) -> str:
@@ -74,7 +202,12 @@ def _match_columns(df_columns: list[str], hints: dict) -> tuple[dict, list[str]]
 
 
 def _list_excel_sheets(file_bytes: bytes, engine: str) -> list[str]:
-    """Return sheet names from an xls/xlsx workbook."""
+    """Return sheet names from an xls/xlsx/html-xls workbook."""
+    if engine == "html":
+        tables = _parse_html_tables(file_bytes)
+        if not tables:
+            raise ValueError("檔案中未找到任何表格資料")
+        return [f"Table {i + 1}" for i in range(len(tables))]
     if engine == "openpyxl":
         from openpyxl import load_workbook
 
@@ -89,15 +222,74 @@ def _list_excel_sheets(file_bytes: bytes, engine: str) -> list[str]:
     return sheets
 
 
-def _detect_header_row(file_bytes: bytes, engine: str, hints: dict, sheet_name=0) -> int:
-    """Score first 20 rows and return the best 0-based header row index."""
-    preview = pd.read_excel(
+def _read_raw_sheet(
+    file_bytes: bytes,
+    engine: str,
+    sheet_name=0,
+    header=None,
+    nrows: int | None = None,
+) -> pd.DataFrame:
+    """Read a sheet into a DataFrame (dtype=str) for openpyxl, xlrd, or HTML-disguised .xls."""
+    if engine == "html":
+        tables = _parse_html_tables(file_bytes)
+        if not tables:
+            raise ValueError("檔案中未找到任何表格資料")
+        if isinstance(sheet_name, int):
+            idx = sheet_name
+        elif isinstance(sheet_name, str):
+            m = re.fullmatch(r"Table\s+(\d+)", sheet_name.strip(), re.IGNORECASE)
+            if m:
+                idx = int(m.group(1)) - 1
+            elif sheet_name.strip().isdigit():
+                idx = int(sheet_name.strip())
+            else:
+                raise ValueError(f"找不到工作表：{sheet_name}")
+        else:
+            idx = 0
+
+        if idx < 0 or idx >= len(tables):
+            raise ValueError(f"找不到工作表：{sheet_name}")
+
+        raw_rows = tables[idx]
+        max_cols = max((len(r) for r in raw_rows), default=0)
+        if max_cols == 0:
+            return pd.DataFrame()
+        padded = [r + [""] * (max_cols - len(r)) for r in raw_rows]
+
+        if header is None:
+            selected = padded[:nrows] if nrows is not None else padded
+            return pd.DataFrame(selected, dtype=str)
+
+        header_idx = int(header)
+        if header_idx < 0 or header_idx >= len(padded):
+            return pd.DataFrame()
+
+        raw_header = padded[header_idx]
+        columns = [cell if cell else f"Unnamed: {i}" for i, cell in enumerate(raw_header)]
+        data_rows = padded[header_idx + 1 :]
+        if nrows is not None:
+            data_rows = data_rows[:nrows]
+        normalized_rows = [[cell if cell != "" else None for cell in r] for r in data_rows]
+        return pd.DataFrame(normalized_rows, columns=columns, dtype=str)
+
+    return pd.read_excel(
         io.BytesIO(file_bytes),
         engine=engine,
         sheet_name=sheet_name,
+        header=header,
+        nrows=nrows,
+        dtype=str,
+    )
+
+
+def _detect_header_row(file_bytes: bytes, engine: str, hints: dict, sheet_name=0) -> int:
+    """Score first 20 rows and return the best 0-based header row index."""
+    preview = _read_raw_sheet(
+        file_bytes,
+        engine,
+        sheet_name=sheet_name,
         header=None,
         nrows=20,
-        dtype=str,
     )
     hint_tokens = {str(token).strip().lower() for candidates in hints.values() for token in candidates}
     best_row = 0
@@ -118,12 +310,11 @@ def _read_excel_with_detected_header(
     sheet_name=0,
 ) -> pd.DataFrame:
     best_row = _detect_header_row(file_bytes, engine, hints, sheet_name=sheet_name)
-    return pd.read_excel(
-        io.BytesIO(file_bytes),
-        engine=engine,
+    return _read_raw_sheet(
+        file_bytes,
+        engine,
         sheet_name=sheet_name,
         header=best_row,
-        dtype=str,
     )
 
 
@@ -219,19 +410,8 @@ def preview_excel(
     Returns sheet list, guessed header row (0-based), source columns, and suggested field mappings.
     header_row input is 0-based (pandas convention).
     """
-    engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
-
-    if engine == "openpyxl":
-        from openpyxl import load_workbook
-
-        wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
-        sheets = list(wb.sheetnames)
-        wb.close()
-    else:
-        import xlrd
-
-        wb = xlrd.open_workbook(file_contents=file_bytes)
-        sheets = wb.sheet_names()
+    engine = _detect_file_engine(file_bytes, filename)
+    sheets = _list_excel_sheets(file_bytes, engine)
 
     active_sheet = sheet_name if sheet_name else (sheets[0] if sheets else 0)
 
@@ -240,13 +420,12 @@ def preview_excel(
     else:
         guessed_header_row = header_row
 
-    df = pd.read_excel(
-        io.BytesIO(file_bytes),
-        engine=engine,
+    df = _read_raw_sheet(
+        file_bytes,
+        engine,
         sheet_name=active_sheet,
         header=guessed_header_row,
         nrows=1,
-        dtype=str,
     )
 
     source_columns = []
@@ -289,14 +468,13 @@ def preview_award_groups(
     if not award_col:
         raise ValueError("尚未對應獲獎項目欄位")
 
-    engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
+    engine = _detect_file_engine(file_bytes, filename)
     sheet = sheet_name if sheet_name else 0
-    df = pd.read_excel(
-        io.BytesIO(file_bytes),
-        engine=engine,
+    df = _read_raw_sheet(
+        file_bytes,
+        engine,
         sheet_name=sheet,
         header=header_row,
-        dtype=str,
     )
     df.columns = [str(c).strip() for c in df.columns]
 
@@ -683,7 +861,7 @@ def confirm_import(
 
     mappings = mappings or {}
     extra_field_settings = extra_field_settings or []
-    engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
+    engine = _detect_file_engine(file_bytes, filename)
     sheet = sheet_name if sheet_name else 0
 
     pp_formula_map: dict = {}
@@ -692,12 +870,11 @@ def confirm_import(
         if pp_src_col:
             pp_formula_map = _build_formula_fallback(file_bytes, sheet, header_row, pp_src_col)
 
-    df = pd.read_excel(
-        io.BytesIO(file_bytes),
-        engine=engine,
+    df = _read_raw_sheet(
+        file_bytes,
+        engine,
         sheet_name=sheet,
         header=header_row,
-        dtype=str,
     )
     df.columns = [str(c).strip() for c in df.columns]
 
@@ -735,67 +912,19 @@ def confirm_import(
     return result
 
 
-def import_library_holdings(
-    file_bytes: bytes,
-    filename: str,
-    user_id: int,
-    profile_id: int | None = None,
-    column_overrides: dict | None = None,
-) -> dict:
-    now = datetime.now(timezone.utc).isoformat()
-    engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
-    sheets = _list_excel_sheets(file_bytes, engine)
+def _holding_dedup_key(
+    isbn_normalized: str | None,
+    library_record_id: str | None,
+    title: str | None,
+) -> tuple[str, str, str]:
+    rec_id = (library_record_id or "").strip()
+    if rec_id:
+        return ("rid", isbn_normalized or "", rec_id)
+    title_key = normalize_title_for_match(title) or (title or "").strip().lower()
+    return ("title", isbn_normalized or "", title_key)
 
-    with db_session(get_connection) as conn:
-        _clear_library_holdings(conn)
 
-        batch_row = conn.execute(
-            "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
-            "imported_by, imported_at) VALUES (NULL, 'library_holdings', ?, ?, ?, ?)",
-            (filename, profile_id, user_id, now),
-        )
-        batch_id = batch_row.lastrowid
-
-        records_inserted = 0
-        sheet_summaries = []
-        skipped_sheets = []
-        last_mapping: dict = {}
-        last_unmapped: list = []
-
-        for sheet_name in sheets:
-            sheet_res = _read_library_sheet(file_bytes, engine, sheet_name)
-            if sheet_res is None:
-                skipped_sheets.append({"sheet_name": str(sheet_name), "reason": "無 isbn 或 title 欄位"})
-                continue
-            df, mapping, unmapped = sheet_res
-            if column_overrides:
-                mapping.update(column_overrides)
-            n = _insert_library_holding_rows(conn, batch_id, df, mapping)
-            records_inserted += n
-            sheet_summaries.append({"sheet_name": str(sheet_name), "record_count": n})
-            last_mapping, last_unmapped = mapping, unmapped
-
-        if records_inserted == 0:
-            raise ValueError("館藏檔案未匯入任何有效資料，請確認 Excel 格式與欄位名稱")
-
-        conn.execute(
-            "UPDATE import_batches SET record_count = ? WHERE id = ?",
-            (records_inserted, batch_id),
-        )
-        conn.commit()
-
-    result: dict = {
-        "batch_id": batch_id,
-        "replaced": True,
-        "record_count": records_inserted,
-        "sheet_summaries": sheet_summaries,
-        "skipped_sheets": skipped_sheets,
-        "unmapped_fields": last_unmapped,
-        "column_mapping": last_mapping,
-        "match_rerun": False,
-        "affected_projects": [],
-        "match_stats_by_project": {},
-    }
+def _rerun_match_after_holdings_change(result: dict) -> None:
     try:
         with db_session(get_connection) as conn2:
             vendor_book_exists = (
@@ -817,11 +946,245 @@ def import_library_holdings(
             stats = run_match()
             result["match_stats"] = stats
             result["match_rerun"] = True
-            for pid in legacy_project_ids:
-                result["affected_projects"].append(pid)
-                result["match_stats_by_project"][str(pid)] = stats
+            if "affected_projects" in result and "match_stats_by_project" in result:
+                for pid in legacy_project_ids:
+                    result["affected_projects"].append(pid)
+                    result["match_stats_by_project"][str(pid)] = stats
     except Exception as e:
         result["match_rerun_error"] = str(e)
+
+
+def import_library_holdings(
+    file_bytes: bytes,
+    filename: str,
+    user_id: int,
+    profile_id: int | None = None,
+    column_overrides: dict | None = None,
+    import_mode: str = "replace",
+) -> dict:
+    if import_mode not in VALID_HOLDINGS_IMPORT_MODES:
+        raise ValueError(f"不支援的館藏匯入模式：{import_mode}（僅支援 replace 或 append）")
+
+    now = datetime.now(timezone.utc).isoformat()
+    engine = _detect_file_engine(file_bytes, filename)
+    sheets = _list_excel_sheets(file_bytes, engine)
+
+    with db_session(get_connection) as conn:
+        seen_keys: set[tuple[str, str, str]] | None = None
+        if import_mode == "replace":
+            _clear_library_holdings(conn)
+        else:
+            existing_rows = conn.execute(
+                "SELECT isbn_normalized, library_record_id, title FROM library_holdings"
+            ).fetchall()
+            seen_keys = {
+                _holding_dedup_key(r["isbn_normalized"], r["library_record_id"], r["title"]) for r in existing_rows
+            }
+
+        all_rows_to_insert: list[tuple] = []
+        skipped_duplicate_count = 0
+        sheet_summaries = []
+        skipped_sheets = []
+        last_mapping: dict = {}
+        last_unmapped: list = []
+
+        for sheet_name in sheets:
+            sheet_res = _read_library_sheet(file_bytes, engine, sheet_name)
+            if sheet_res is None:
+                skipped_sheets.append({"sheet_name": str(sheet_name), "reason": "無 isbn 或 title 欄位"})
+                continue
+            df, mapping, unmapped = sheet_res
+            if column_overrides:
+                mapping.update(column_overrides)
+            sheet_rows, sheet_skipped = _collect_library_holding_rows(df, mapping, seen_keys=seen_keys)
+            all_rows_to_insert.extend(sheet_rows)
+            skipped_duplicate_count += sheet_skipped
+            sheet_summaries.append(
+                {
+                    "sheet_name": str(sheet_name),
+                    "record_count": len(sheet_rows),
+                    "skipped_duplicate_count": sheet_skipped,
+                }
+            )
+            last_mapping, last_unmapped = mapping, unmapped
+
+        records_inserted = len(all_rows_to_insert)
+        if records_inserted == 0 and skipped_duplicate_count == 0:
+            raise ValueError("館藏檔案未匯入任何有效資料，請確認 Excel 格式與欄位名稱")
+
+        batch_id: int | None = None
+        if records_inserted > 0:
+            batch_row = conn.execute(
+                "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
+                "record_count, imported_by, imported_at) VALUES (NULL, 'library_holdings', ?, ?, ?, ?, ?)",
+                (filename, profile_id, records_inserted, user_id, now),
+            )
+            batch_id = batch_row.lastrowid
+            conn.executemany(
+                "INSERT INTO library_holdings"
+                "(batch_id, isbn, isbn_normalized, title, author, publisher, publish_year, "
+                "price, library_record_id, isbn_status, raw_row) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(batch_id, *row) for row in all_rows_to_insert],
+            )
+            conn.commit()
+
+    result: dict = {
+        "batch_id": batch_id,
+        "import_mode": import_mode,
+        "replaced": import_mode == "replace",
+        "record_count": records_inserted,
+        "skipped_duplicate_count": skipped_duplicate_count,
+        "sheet_summaries": sheet_summaries,
+        "skipped_sheets": skipped_sheets,
+        "unmapped_fields": last_unmapped,
+        "column_mapping": last_mapping,
+        "match_rerun": False,
+        "affected_projects": [],
+        "match_stats_by_project": {},
+    }
+    if records_inserted > 0:
+        _rerun_match_after_holdings_change(result)
+    return result
+
+
+def commit_project_selections_to_holdings(project_id: int, user_id: int) -> dict:
+    """Commit a project's selected books (selected_quantity > 0) into library_holdings idempotently."""
+    now = datetime.now(timezone.utc).isoformat()
+    with db_session(get_connection) as conn:
+        project = conn.execute(
+            "SELECT id, name FROM procurement_projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+        if project is None:
+            raise LookupError("採購專案不存在")
+        project_name = str(project["name"])
+
+        items = conn.execute(
+            "SELECT id, title, author, publisher, isbn, isbn_normalized, isbn_status, "
+            "publish_date, list_price, purchase_price, user_overrides "
+            "FROM selection_items "
+            "WHERE project_id = ? AND selected_quantity > 0 "
+            "ORDER BY id ASC",
+            (project_id,),
+        ).fetchall()
+        if not items:
+            raise ValueError("本專案尚無已選購書目，無法記入館藏")
+
+        existing_rows = conn.execute(
+            "SELECT isbn_normalized, library_record_id FROM library_holdings "
+            "WHERE library_record_id IS NOT NULL AND TRIM(library_record_id) != ''"
+        ).fetchall()
+        existing_record_ids: set[str] = set()
+        existing_isbn_rid: set[tuple[str, str]] = set()
+        for r in existing_rows:
+            rid = str(r["library_record_id"]).strip()
+            existing_record_ids.add(rid)
+            existing_isbn_rid.add((r["isbn_normalized"] or "", rid))
+
+        rows_to_insert: list[tuple] = []
+        skipped_count = 0
+
+        for si in items:
+            raw_ov = si["user_overrides"]
+            try:
+                overrides = json.loads(raw_ov) if raw_ov else {}
+            except (TypeError, json.JSONDecodeError):
+                overrides = {}
+            if not isinstance(overrides, dict):
+                overrides = {}
+
+            def _pick(field: str, _si=si, _ov=overrides):
+                val = _ov.get(field)
+                if val not in (None, ""):
+                    return val
+                return _si[field]
+
+            title_val = _pick("title")
+            author_val = _pick("author")
+            publisher_val = _pick("publisher")
+            isbn_val = _pick("isbn")
+            pub_date_val = _pick("publish_date")
+
+            title = str(title_val).strip() if title_val not in (None, "") else None
+            author = str(author_val).strip() if author_val not in (None, "") else None
+            publisher = str(publisher_val).strip() if publisher_val not in (None, "") else None
+            isbn_raw = str(isbn_val).strip() if isbn_val not in (None, "") else None
+            isbn_norm = normalize_isbn(isbn_raw)
+            isbn_status = get_isbn_status(isbn_raw)
+            publish_year = str(pub_date_val).strip() if pub_date_val not in (None, "") else None
+
+            price = _to_float(_pick("purchase_price"))
+            if price is None:
+                price = _to_float(_pick("list_price"))
+
+            library_record_id = f"PO-{project_id}-{si['id']}"
+            if library_record_id in existing_record_ids or (isbn_norm or "", library_record_id) in existing_isbn_rid:
+                skipped_count += 1
+                continue
+
+            existing_record_ids.add(library_record_id)
+            existing_isbn_rid.add((isbn_norm or "", library_record_id))
+
+            raw_row = json.dumps(
+                {
+                    "source": "procurement_commit",
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "selection_item_id": si["id"],
+                    "title": title,
+                    "author": author,
+                    "publisher": publisher,
+                    "isbn": isbn_raw,
+                    "publish_year": publish_year,
+                    "price": price,
+                },
+                ensure_ascii=False,
+            )
+            rows_to_insert.append(
+                (
+                    isbn_raw,
+                    isbn_norm,
+                    title,
+                    author,
+                    publisher,
+                    publish_year,
+                    price,
+                    library_record_id,
+                    isbn_status,
+                    raw_row,
+                )
+            )
+
+        inserted_count = len(rows_to_insert)
+        batch_id: int | None = None
+        if inserted_count > 0:
+            batch_row = conn.execute(
+                "INSERT INTO import_batches(project_id, batch_type, original_filename, record_count, "
+                "imported_by, imported_at) VALUES (NULL, 'library_holdings', ?, ?, ?, ?)",
+                (f"採購回流：{project_name}", inserted_count, user_id, now),
+            )
+            batch_id = batch_row.lastrowid
+            conn.executemany(
+                "INSERT INTO library_holdings"
+                "(batch_id, isbn, isbn_normalized, title, author, publisher, publish_year, "
+                "price, library_record_id, isbn_status, raw_row) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(batch_id, *row) for row in rows_to_insert],
+            )
+            conn.commit()
+
+    result: dict = {
+        "project_id": project_id,
+        "project_name": project_name,
+        "batch_id": batch_id,
+        "inserted_count": inserted_count,
+        "skipped_count": skipped_count,
+        "match_rerun": False,
+        "match_stats": None,
+    }
+    if inserted_count > 0:
+        _rerun_match_after_holdings_change(result)
     return result
 
 
@@ -839,14 +1202,13 @@ def import_vendor_books(
     if import_mode not in VALID_IMPORT_MODES:
         raise ValueError(f"不支援的匯入模式：{import_mode}（僅支援 upsert 或 replace_vendor）")
 
-    engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
+    engine = _detect_file_engine(file_bytes, filename)
     header_row = _detect_header_row(file_bytes, engine, VENDOR_COLUMN_HINTS)
-    df = pd.read_excel(
-        io.BytesIO(file_bytes),
-        engine=engine,
+    df = _read_raw_sheet(
+        file_bytes,
+        engine,
         sheet_name=0,
         header=header_row,
-        dtype=str,
     )
     df.columns = [str(c).strip() for c in df.columns]
     mapping, unmapped = _match_columns(list(df.columns), VENDOR_COLUMN_HINTS)
@@ -899,7 +1261,10 @@ def _to_float(v) -> float | None:
     if v is None:
         return None
     try:
-        val = float(str(v).replace(",", ""))
+        cleaned = _CURRENCY_CLEAN_RE.sub("", str(v))
+        if not cleaned:
+            return None
+        val = float(cleaned)
         return val if math.isfinite(val) else None
     except (ValueError, TypeError):
         return None
@@ -1239,18 +1604,28 @@ def _read_library_sheet(file_bytes: bytes, engine: str, sheet_name) -> tuple | N
     return df, mapping, unmapped
 
 
-def _insert_library_holding_rows(conn, batch_id: int, df, mapping: dict) -> int:
-    """Insert rows from one sheet into library_holdings using executemany. Returns count inserted."""
+def _collect_library_holding_rows(
+    df,
+    mapping: dict,
+    seen_keys: set[tuple[str, str, str]] | None = None,
+) -> tuple[list[tuple], int]:
+    """Parse rows from one sheet for library_holdings insertion (without batch_id).
+
+    When ``seen_keys`` is provided (append mode), deduplicates against existing keys
+    and updates ``seen_keys`` in place to prevent within-file duplicates as well.
+    Returns ``(rows_to_insert, skipped_duplicate_count)``.
+    """
     reverse_map = {v: k for k, v in mapping.items()}
     rows_to_insert: list[tuple] = []
+    skipped_duplicates = 0
 
     for _, row in df.iterrows():
         raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
 
-        def get_field(field: str):
+        def get_field(field: str, _raw=raw):
             src = reverse_map.get(field)
             if src:
-                v = raw.get(src)
+                v = _raw.get(src)
                 return v if v else None
             return None
 
@@ -1260,10 +1635,17 @@ def _insert_library_holding_rows(conn, batch_id: int, df, mapping: dict) -> int:
             continue
         isbn_norm = normalize_isbn(isbn_raw)
         isbn_status = get_isbn_status(isbn_raw)
+        rec_id = get_field("library_record_id")
+
+        if seen_keys is not None:
+            key = _holding_dedup_key(isbn_norm, rec_id, title)
+            if key in seen_keys:
+                skipped_duplicates += 1
+                continue
+            seen_keys.add(key)
 
         rows_to_insert.append(
             (
-                batch_id,
                 isbn_raw,
                 isbn_norm,
                 title,
@@ -1271,11 +1653,24 @@ def _insert_library_holding_rows(conn, batch_id: int, df, mapping: dict) -> int:
                 get_field("publisher"),
                 get_field("publish_year"),
                 _to_float(get_field("price")),
-                get_field("library_record_id"),
+                rec_id,
                 isbn_status,
                 json.dumps(raw, ensure_ascii=False),
             )
         )
+
+    return rows_to_insert, skipped_duplicates
+
+
+def _insert_library_holding_rows(
+    conn,
+    batch_id: int,
+    df,
+    mapping: dict,
+    seen_keys: set[tuple[str, str, str]] | None = None,
+) -> int:
+    """Insert rows from one sheet into library_holdings using executemany. Returns count inserted."""
+    rows_to_insert, _ = _collect_library_holding_rows(df, mapping, seen_keys=seen_keys)
 
     if rows_to_insert:
         conn.executemany(
@@ -1283,7 +1678,7 @@ def _insert_library_holding_rows(conn, batch_id: int, df, mapping: dict) -> int:
             "(batch_id, isbn, isbn_normalized, title, author, publisher, publish_year, "
             "price, library_record_id, isbn_status, raw_row) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            rows_to_insert,
+            [(batch_id, *row) for row in rows_to_insert],
         )
 
     return len(rows_to_insert)

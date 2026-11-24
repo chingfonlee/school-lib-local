@@ -28,11 +28,17 @@ def _resolve_project_type(conn, project_id: int) -> str:
 @router.post("/holdings")
 async def upload_holdings(
     file: UploadFile = File(...),
+    import_mode: str = Form("replace"),
     user_id: int = Depends(require_auth),
 ):
     content = await file.read()
     try:
-        result = import_library_holdings(content, file.filename, user_id)
+        result = import_library_holdings(
+            content,
+            file.filename or "",
+            user_id,
+            import_mode=import_mode,
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
