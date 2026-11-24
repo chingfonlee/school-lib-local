@@ -81,6 +81,7 @@ h2 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
 .stat-card .label { font-size: 12px; color: #6e6e73; margin-top: 2px; }
 .stat-card.green .num { color: #1d8348; }
 .stat-card.yellow .num { color: #9a7d0a; }
+.stat-card.purple .num { color: #5b21b6; }
 .stat-card.red .num { color: #c0392b; }
 .stat-card.gray .num { color: #555; }
 
@@ -136,10 +137,40 @@ tr:last-child td { border-bottom: none; }
 .badge-missing_isbn { background: #fef9e7; color: #9a7d0a; }
 .badge-invalid_isbn { background: #fde8e7; color: #c0392b; }
 .badge-same_title_different_isbn { background: #fef3e2; color: #8b5e00; }
+.badge-similar { background: #fef3c7; color: #92400e; }
+.badge-other-project { background: #ede9fe; color: #5b21b6; }
 .badge-export_ready { background: #d5f5e3; color: #1d8348; }
 .badge-needs_review { background: #fef9e7; color: #9a7d0a; }
 .badge-missing_required { background: #fde8e7; color: #c0392b; }
 .badge-unknown { background: #e8e8ed; color: #555; }
+
+/* Duplicate purchase prevention warnings */
+.dup-note {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+}
+.dup-note-similar { color: #78350f; }
+.dup-note-other-project { color: #4c1d95; }
+.dup-warn-box {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.dup-warn-similar {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #78350f;
+}
+.dup-warn-other-project {
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  color: #4c1d95;
+}
 
 /* Filters */
 .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }

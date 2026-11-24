@@ -1,9 +1,33 @@
 from collections import defaultdict
 from datetime import datetime, timezone
+import re
 from typing import Any
+import unicodedata
 import uuid
 
 from app.database import db_session, get_connection
+
+_EDITION_BRACKET_RE = re.compile(
+    r"[(\[【〔]\s*"
+    r"(?:"
+    r"(?:精裝|平裝)(?:版|本)?"
+    r"|(?:全新|最新)?(?:修訂|增訂|修訂二|修訂三|新|初|二|三|四|五|2|3|4|5|繪本|典藏|紀念|普及)版"
+    r")"
+    r"\s*[)\]】〕]"
+)
+_NON_WORD_RE = re.compile(r"[\W_]+")
+
+
+def normalize_title_for_match(title: str | None) -> str:
+    """Normalize a book title for duplicate-title matching across editions/ISBNs."""
+    if not title:
+        return ""
+    text = unicodedata.normalize("NFKC", title).lower()
+    text = _EDITION_BRACKET_RE.sub("", text)
+    text = _NON_WORD_RE.sub("", text)
+    if len(text) < 2:
+        return ""
+    return text
 
 
 def run_match(project_id: int) -> dict[str, int]:
@@ -19,9 +43,9 @@ def run_match(project_id: int) -> dict[str, int]:
         title_index: dict[str, list[str]] = defaultdict(list)
         for h in holdings:
             isbn_index[h["isbn_normalized"]] = h["id"]
-            if h["title"]:
-                key = "".join(h["title"].split())
-                title_index[key].append(h["isbn_normalized"])
+            title_key = normalize_title_for_match(h["title"])
+            if title_key:
+                title_index[title_key].append(h["isbn_normalized"])
 
         vbooks = conn.execute(
             "SELECT vb.id, vb.isbn_normalized, vb.isbn_status, vb.title "
@@ -61,8 +85,8 @@ def run_match(project_id: int) -> dict[str, int]:
             stats[status] = stats.get(status, 0) + 1
 
             if status == "available" and vb["title"]:
-                title_key = "".join(vb["title"].split())
-                matched_isbns = title_index.get(title_key, [])
+                title_key = normalize_title_for_match(vb["title"])
+                matched_isbns = title_index.get(title_key, []) if title_key else []
                 for h_isbn in matched_isbns:
                     if h_isbn != vb["isbn_normalized"]:
                         rows_to_insert.append(

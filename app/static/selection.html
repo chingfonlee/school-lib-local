@@ -66,6 +66,8 @@
         <option value="">全部</option>
         <option value="available">可採購</option>
         <option value="already_owned">已館藏</option>
+        <option value="same_title_different_isbn">疑似同名館藏</option>
+        <option value="other_project_selected">他案已選</option>
       </select>
     </div>
     <div class="filter-field">
@@ -406,7 +408,13 @@ function applyFilter(opts = {}) {
   const sortMode = document.getElementById('filter-sort').value;
 
   let filtered = allBooks;
-  if (matchVal) filtered = filtered.filter(b => getEffectiveMatchStatus(b) === matchVal);
+  if (matchVal === 'same_title_different_isbn') {
+    filtered = filtered.filter(b => Boolean(b.similar_holding));
+  } else if (matchVal === 'other_project_selected') {
+    filtered = filtered.filter(b => Array.isArray(b.other_project_selections) && b.other_project_selections.length > 0);
+  } else if (matchVal) {
+    filtered = filtered.filter(b => getEffectiveMatchStatus(b) === matchVal);
+  }
   if (comp) filtered = filtered.filter(b => b.completeness_status === comp);
   if (bookType) filtered = filtered.filter(b => (b.book_type || '') === bookType);
   if (ageRange) filtered = filtered.filter(b => (b.age_range || '') === ageRange);
@@ -491,6 +499,31 @@ function resetFilters() {
   applyFilter();
 }
 
+function renderMatchBadge(b) {
+  const status = getEffectiveMatchStatus(b);
+  const copies = Number(b.holding_copies) || 0;
+  if (status === 'already_owned' && copies > 0) {
+    return `<span class="badge badge-already_owned">已館藏（${copies}冊）</span>`;
+  }
+  return badge(status);
+}
+
+function renderDuplicateWarnings(b) {
+  let html = '';
+  if (b.similar_holding) {
+    const sh = b.similar_holding;
+    const detailParts = [esc(sh.title || '—')];
+    if (sh.author) detailParts.push(esc(sh.author));
+    const isbnText = sh.isbn ? `（ISBN: ${esc(sh.isbn)}）` : '';
+    html += `<div class="dup-warn-box dup-warn-similar"><span class="badge badge-similar">疑似同名館藏</span> 館藏：${detailParts.join(' / ')}${isbnText}</div>`;
+  }
+  if (Array.isArray(b.other_project_selections) && b.other_project_selections.length > 0) {
+    const names = b.other_project_selections.map(p => esc(p.project_name || '')).filter(Boolean).join('、');
+    html += `<div class="dup-warn-box dup-warn-other-project"><span class="badge badge-other-project">他案已選</span> ${names}</div>`;
+  }
+  return html;
+}
+
 function render(books) {
   const grid = document.getElementById('book-grid');
   if (!books.length) {
@@ -534,7 +567,8 @@ function render(books) {
         ${award ? `<div class="book-card-award">${esc(award)}</div>` : ''}
         ${policyTopic ? `<div style="font-size:11px;margin-top:4px"><span style="background:#e8f4f8;color:#1d6fa4;border-radius:3px;padding:1px 5px">${esc(policyTopic)}</span></div>` : ''}
         ${summary ? `<div style="font-size:12px;color:#6e6e73;margin-top:4px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(summary)}</div>` : ''}
-        <div style="margin-top:2px">${badge(b.completeness_status || 'unknown')}</div>
+        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">${renderMatchBadge(b)}${badge(b.completeness_status || 'unknown')}</div>
+        ${renderDuplicateWarnings(b)}
       </div>
       <div class="book-card-footer">
         <div class="book-card-links">

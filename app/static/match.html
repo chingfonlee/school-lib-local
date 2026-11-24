@@ -40,6 +40,8 @@
       <option value="">全部</option>
       <option value="available">可採購</option>
       <option value="already_owned">已館藏</option>
+      <option value="same_title_different_isbn">疑似同名館藏</option>
+      <option value="other_project_selected">他案已選</option>
     </select>
     <label>完整度：</label>
     <select id="filter-comp" onchange="loadBooks()">
@@ -95,6 +97,8 @@ async function loadStats() {
     document.getElementById('stats-row').innerHTML = `
       <div class="stat-card green"><div class="num">${ms.available||0}</div><div class="label">可採購</div></div>
       <div class="stat-card gray"><div class="num">${ms.already_owned||0}</div><div class="label">已館藏</div></div>
+      <div class="stat-card yellow"><div class="num">${s.same_title_different_isbn_count||0}</div><div class="label">疑似同名館藏</div></div>
+      <div class="stat-card purple"><div class="num">${s.other_project_duplicate_count||0}</div><div class="label">他案已選</div></div>
       <div class="stat-card gray"><div class="num">${s.ignored_missing_isbn||0}</div><div class="label">已忽略缺ISBN</div></div>
       <div class="stat-card green"><div class="num">${cs.export_ready||0}</div><div class="label">可匯出</div></div>
       <div class="stat-card yellow"><div class="num">${cs.needs_review||0}</div><div class="label">需補資料</div></div>
@@ -103,6 +107,29 @@ async function loadStats() {
   } catch (e) {
     document.getElementById('stats-row').innerHTML = `<div class="alert alert-error">無法載入統計：${esc(e.message)}</div>`;
   }
+}
+
+function renderMatchStatusCell(b) {
+  const status = b.match_status || 'unknown';
+  const copies = Number(b.holding_copies) || 0;
+  let html = status === 'already_owned' && copies > 0
+    ? `<span class="badge badge-already_owned">已館藏（${copies}冊）</span>`
+    : badge(status);
+
+  if (b.similar_holding) {
+    const sh = b.similar_holding;
+    const parts = [esc(sh.title || '—')];
+    if (sh.author) parts.push(esc(sh.author));
+    const isbnText = sh.isbn ? `（ISBN: ${esc(sh.isbn)}）` : '';
+    html += `<div class="dup-note dup-note-similar"><span class="badge badge-similar">疑似同名館藏</span> ${parts.join(' / ')}${isbnText}</div>`;
+  }
+
+  if (Array.isArray(b.other_project_selections) && b.other_project_selections.length > 0) {
+    const names = b.other_project_selections.map(p => esc(p.project_name || '')).filter(Boolean).join('、');
+    html += `<div class="dup-note dup-note-other-project"><span class="badge badge-other-project">他案已選</span> ${names}</div>`;
+  }
+
+  return html;
 }
 
 async function loadBooks() {
@@ -139,7 +166,7 @@ async function loadBooks() {
       <td>${esc(publisher)}</td>
       <td style="font-size:12px">${esc(isbn)}</td>
       <td style="font-size:12px;max-width:160px;white-space:normal">${esc(award)}</td>
-      <td>${badge(b.match_status || 'unknown')}</td>
+      <td>${renderMatchStatusCell(b)}</td>
       <td>${badge(b.completeness_status || 'unknown')}</td>
     </tr>`;
   }).join('');
