@@ -8,6 +8,8 @@ from app.database import db_session, get_connection
 from app.services.import_service import (
     import_library_holdings,
     import_vendor_books,
+    list_vendors,
+    normalize_vendor_name,
     preview_excel,
     preview_award_groups,
     confirm_import,
@@ -90,7 +92,9 @@ async def normalize_vendor_book_awards(
 @router.post("/vendor-books/confirm")
 async def confirm_vendor_books(
     file: UploadFile = File(...),
-    project_id: int = Form(...),
+    project_id: int | None = Form(None),
+    vendor_name: str | None = Form(None),
+    import_mode: str = Form("upsert"),
     sheet_name: str | None = Form(None),
     header_row: int = Form(...),
     mappings: str = Form(...),
@@ -114,7 +118,7 @@ async def confirm_vendor_books(
     if save_profile and profile_name:
         now = datetime.now(timezone.utc).isoformat()
         with db_session(get_connection) as conn:
-            proj_type = _resolve_project_type(conn, project_id)
+            proj_type = _resolve_project_type(conn, project_id) if project_id is not None else None
             row = conn.execute(
                 "INSERT OR IGNORE INTO import_profiles"
                 "(name, file_type, column_mappings, project_type, source_type, "
@@ -137,8 +141,8 @@ async def confirm_vendor_books(
     try:
         result = confirm_import(
             content,
-            file.filename,
-            project_id,
+            file.filename or "",
+            project_id=project_id,
             sheet_name=sheet_name,
             header_row=header_row,
             mappings=mappings_dict,
@@ -146,6 +150,8 @@ async def confirm_vendor_books(
             user_id=user_id,
             profile_id=profile_id,
             award_overrides=award_overrides_dict or None,
+            vendor_name=vendor_name,
+            import_mode=import_mode,
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -155,15 +161,30 @@ async def confirm_vendor_books(
 @router.post("/vendor-books")
 async def upload_vendor_books(
     file: UploadFile = File(...),
-    project_id: int = Form(...),
+    project_id: int | None = Form(None),
+    vendor_name: str | None = Form(None),
+    import_mode: str = Form("upsert"),
     user_id: int = Depends(require_auth),
 ):
     content = await file.read()
     try:
-        result = import_vendor_books(content, file.filename, project_id, user_id)
+        result = import_vendor_books(
+            content,
+            file.filename or "",
+            project_id=project_id,
+            user_id=user_id,
+            vendor_name=vendor_name,
+            import_mode=import_mode,
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
+
+
+@router.get("/vendors")
+async def get_vendors(user_id: int = Depends(require_auth)):
+    _ = user_id
+    return list_vendors()
 
 
 @router.delete("/holdings")
@@ -176,11 +197,25 @@ async def delete_holdings(user_id: int = Depends(require_auth)):
 
 
 @router.delete("/vendor-books")
-async def delete_vendor_books(project_id: int, user_id: int = Depends(require_auth)):
+async def delete_vendor_books(
+    vendor_name: str | None = None,
+    clear_all: bool = False,
+    project_id: int | None = None,
+    user_id: int = Depends(require_auth),
+):
+    if not clear_all and not (vendor_name and vendor_name.strip()) and project_id is None:
+        raise HTTPException(status_code=400, detail="請指定 vendor_name、clear_all=true 或 project_id")
     try:
-        result = clear_vendor_books(project_id, user_id)
+        result = clear_vendor_books(
+            project_id=project_id,
+            user_id=user_id,
+            vendor_name=vendor_name,
+            clear_all=clear_all,
+        )
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        msg = str(e)
+        status_code = 404 if "不存在" in msg else 400
+        raise HTTPException(status_code=status_code, detail=msg)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
@@ -191,15 +226,24 @@ async def list_batches(
     project_id: int | None = None,
     user_id: int = Depends(require_auth),
 ):
+    _ = user_id
     with db_session(get_connection) as conn:
         if project_id is not None:
             rows = conn.execute(
-                "SELECT * FROM import_batches WHERE project_id = ? ORDER BY imported_at DESC",
+                "SELECT * FROM import_batches WHERE project_id = ? OR project_id IS NULL ORDER BY imported_at DESC",
                 (project_id,),
             ).fetchall()
         else:
             rows = conn.execute("SELECT * FROM import_batches ORDER BY imported_at DESC").fetchall()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        item = dict(r)
+        if item.get("batch_type") == "vendor_books":
+            item["vendor_name"] = normalize_vendor_name(item.get("vendor_name"))
+        else:
+            item.setdefault("vendor_name", None)
+        result.append(item)
+    return result
 
 
 @router.get("/profiles")

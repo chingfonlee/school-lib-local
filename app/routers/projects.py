@@ -49,14 +49,14 @@ async def list_projects(user_id: int = Depends(require_auth)):
             "(SELECT exported_at FROM export_jobs ej WHERE ej.project_id = p.id "
             " ORDER BY ej.exported_at DESC LIMIT 1) as last_export, "
             "(SELECT imported_at FROM import_batches ib2 "
-            " WHERE ib2.project_id = p.id AND ib2.batch_type = 'vendor_books' "
+            " WHERE ib2.batch_type = 'vendor_books' "
             " ORDER BY ib2.imported_at DESC LIMIT 1) as last_import, "
             "(SELECT COUNT(*) FROM vendor_books vb "
             " JOIN import_batches ib ON ib.id = vb.batch_id "
-            " WHERE ib.project_id = p.id) as vendor_book_count, "
+            " WHERE ib.batch_type = 'vendor_books') as vendor_book_count, "
             "(SELECT COUNT(*) FROM vendor_books vb2 "
             " JOIN import_batches ib3 ON ib3.id = vb2.batch_id "
-            " WHERE ib3.project_id = p.id "
+            " WHERE ib3.batch_type = 'vendor_books' "
             " AND (SELECT bm.match_status FROM book_matches bm "
             "      WHERE bm.vendor_book_id = vb2.id "
             "        AND bm.match_status != 'same_title_different_isbn' "
@@ -126,24 +126,15 @@ async def delete_preview(project_id: int, user_id: int = Depends(require_auth)):
             "SELECT COUNT(*) FROM export_jobs WHERE project_id = ?", (project_id,)
         ).fetchone()[0]
         import_batch_count = conn.execute(
-            "SELECT COUNT(*) FROM import_batches WHERE project_id = ?", (project_id,)
+            "SELECT COUNT(*) FROM import_batches WHERE project_id = ? AND batch_type != 'vendor_books'",
+            (project_id,),
         ).fetchone()[0]
-
-        batch_ids = [
-            r[0] for r in conn.execute("SELECT id FROM import_batches WHERE project_id = ?", (project_id,)).fetchall()
-        ]
-        vendor_book_count = 0
-        holding_count = 0
-        if batch_ids:
-            placeholders = ",".join("?" * len(batch_ids))
-            vendor_book_count = conn.execute(
-                f"SELECT COUNT(*) FROM vendor_books WHERE batch_id IN ({placeholders})",
-                batch_ids,
-            ).fetchone()[0]
-            holding_count = conn.execute(
-                f"SELECT COUNT(*) FROM library_holdings WHERE batch_id IN ({placeholders})",
-                batch_ids,
-            ).fetchone()[0]
+        holding_count = conn.execute(
+            "SELECT COUNT(*) FROM library_holdings lh "
+            "JOIN import_batches ib ON ib.id = lh.batch_id "
+            "WHERE ib.project_id = ? AND ib.batch_type != 'vendor_books'",
+            (project_id,),
+        ).fetchone()[0]
 
     return {
         "project_id": project_id,
@@ -151,8 +142,9 @@ async def delete_preview(project_id: int, user_id: int = Depends(require_auth)):
         "selection_count": selection_count,
         "export_job_count": export_job_count,
         "import_batch_count": import_batch_count,
-        "vendor_book_count": vendor_book_count,
+        "vendor_book_count": 0,
         "holding_count": holding_count,
+        "shared_catalog_preserved": True,
     }
 
 
@@ -164,30 +156,38 @@ async def delete_project(project_id: int, user_id: int = Depends(require_auth)):
             if existing is None:
                 raise HTTPException(status_code=404, detail="找不到專案")
 
-            batch_ids = [
-                r[0]
-                for r in conn.execute("SELECT id FROM import_batches WHERE project_id = ?", (project_id,)).fetchall()
-            ]
+            # Migrate any legacy project-bound vendor_books batches into the shared pool before deleting the project.
+            conn.execute(
+                "UPDATE import_batches SET project_id = NULL WHERE project_id = ? AND batch_type = 'vendor_books'",
+                (project_id,),
+            )
 
             conn.execute("DELETE FROM selection_items WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM export_jobs WHERE project_id = ?", (project_id,))
 
-            if batch_ids:
-                bph = ",".join("?" * len(batch_ids))
+            non_vendor_batches = conn.execute(
+                "SELECT COUNT(*) FROM import_batches WHERE project_id = ? AND batch_type != 'vendor_books'",
+                (project_id,),
+            ).fetchone()[0]
+            if non_vendor_batches > 0:
                 conn.execute(
-                    f"DELETE FROM book_matches WHERE vendor_book_id IN "
-                    f"(SELECT id FROM vendor_books WHERE batch_id IN ({bph}))",
-                    batch_ids,
+                    "UPDATE book_matches SET holding_id = NULL WHERE holding_id IN ("
+                    "  SELECT lh.id FROM library_holdings lh "
+                    "  JOIN import_batches ib ON ib.id = lh.batch_id "
+                    "  WHERE ib.project_id = ? AND ib.batch_type != 'vendor_books'"
+                    ")",
+                    (project_id,),
                 )
-                conn.execute(f"DELETE FROM vendor_books WHERE batch_id IN ({bph})", batch_ids)
-
                 conn.execute(
-                    f"UPDATE book_matches SET holding_id = NULL WHERE holding_id IN "
-                    f"(SELECT id FROM library_holdings WHERE batch_id IN ({bph}))",
-                    batch_ids,
+                    "DELETE FROM library_holdings WHERE batch_id IN ("
+                    "  SELECT id FROM import_batches WHERE project_id = ? AND batch_type != 'vendor_books'"
+                    ")",
+                    (project_id,),
                 )
-                conn.execute(f"DELETE FROM library_holdings WHERE batch_id IN ({bph})", batch_ids)
-                conn.execute("DELETE FROM import_batches WHERE project_id = ?", (project_id,))
+                conn.execute(
+                    "DELETE FROM import_batches WHERE project_id = ? AND batch_type != 'vendor_books'",
+                    (project_id,),
+                )
 
             conn.execute("DELETE FROM procurement_projects WHERE id = ?", (project_id,))
             conn.commit()
