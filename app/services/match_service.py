@@ -30,7 +30,13 @@ def normalize_title_for_match(title: str | None) -> str:
     return text
 
 
-def run_match(project_id: int) -> dict[str, int]:
+def run_match(project_id: int | None = None) -> dict[str, int]:
+    """Match all valid-ISBN books in the shared vendor catalog pool against library holdings.
+
+    ``project_id`` is accepted for backward compatibility and ignored because matching
+    always operates on the school-wide shared vendor catalog.
+    """
+    _ = project_id
     batch_run_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
@@ -51,15 +57,14 @@ def run_match(project_id: int) -> dict[str, int]:
             "SELECT vb.id, vb.isbn_normalized, vb.isbn_status, vb.title "
             "FROM vendor_books vb "
             "JOIN import_batches ib ON ib.id = vb.batch_id "
-            "WHERE ib.project_id = ? AND vb.isbn_status = 'valid'",
-            (project_id,),
+            "WHERE ib.batch_type = 'vendor_books' AND vb.isbn_status = 'valid'"
         ).fetchall()
 
         conn.execute(
             "DELETE FROM book_matches WHERE vendor_book_id IN ("
             "SELECT vb.id FROM vendor_books vb "
-            "JOIN import_batches ib ON ib.id = vb.batch_id WHERE ib.project_id = ?)",
-            (project_id,),
+            "JOIN import_batches ib ON ib.id = vb.batch_id "
+            "WHERE ib.batch_type = 'vendor_books')"
         )
 
         stats: dict[str, int] = {

@@ -12,6 +12,15 @@ from app.services.isbn_service import normalize_isbn, get_isbn_status
 from app.services.completeness_service import compute as compute_completeness
 from app.services.match_service import run_match
 
+DEFAULT_VENDOR_NAME = "未指定書商"
+VALID_IMPORT_MODES = {"upsert", "replace_vendor"}
+
+
+def normalize_vendor_name(vendor_name: str | None) -> str:
+    cleaned = (vendor_name or "").strip()
+    return cleaned if cleaned else DEFAULT_VENDOR_NAME
+
+
 LIBRARY_COLUMN_HINTS = {
     "isbn": ["b02", "isbn", "條碼", "isbn碼", "isbn號"],
     "title": ["b03", "書名", "title"],
@@ -125,6 +134,80 @@ def _is_blank_or_total_row(values: list) -> bool:
     return any(value in {"合計", "總計"} for value in cleaned)
 
 
+def _recommend_import_profile(source_columns: list[str]) -> dict | None:
+    """Find the best matching vendor_books import profile by normalized header overlap."""
+    if not source_columns:
+        return None
+    source_norm = {_normalize_header(c) for c in source_columns if _normalize_header(c)}
+    if not source_norm:
+        return None
+
+    try:
+        with db_session(get_connection) as conn:
+            rows = conn.execute(
+                "SELECT id, name, header_row, mappings, column_mappings, extra_field_settings "
+                "FROM import_profiles "
+                "WHERE file_type = 'vendor_books' "
+                "ORDER BY id DESC"
+            ).fetchall()
+    except Exception:
+        return None
+
+    best_match: dict | None = None
+    best_key: tuple[float, int, int] = (0.0, 0, 0)
+
+    for row in rows:
+        raw_mappings = row["mappings"] or row["column_mappings"]
+        if not raw_mappings:
+            continue
+        try:
+            mappings_dict = json.loads(raw_mappings)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(mappings_dict, dict):
+            continue
+
+        profile_norm = {
+            _normalize_header(str(src_col))
+            for src_col in mappings_dict.values()
+            if src_col and _normalize_header(str(src_col))
+        }
+        if not profile_norm:
+            continue
+
+        matched = len(profile_norm & source_norm)
+        total = len(profile_norm)
+        overlap_ratio = matched / total
+        if matched < 2 or overlap_ratio < 0.5:
+            continue
+
+        extra_settings: list[str] = []
+        raw_extra = row["extra_field_settings"]
+        if raw_extra:
+            try:
+                parsed_extra = json.loads(raw_extra)
+                if isinstance(parsed_extra, list):
+                    extra_settings = [str(item) for item in parsed_extra if item]
+            except (TypeError, json.JSONDecodeError):
+                extra_settings = []
+
+        rank_key = (overlap_ratio, matched, int(row["id"]))
+        if rank_key > best_key:
+            best_key = rank_key
+            best_match = {
+                "id": row["id"],
+                "name": row["name"],
+                "header_row": row["header_row"] if row["header_row"] is not None else 0,
+                "mappings": mappings_dict,
+                "extra_field_settings": extra_settings,
+                "matched_columns": matched,
+                "total_profile_columns": total,
+                "overlap_ratio": round(overlap_ratio, 4),
+            }
+
+    return best_match
+
+
 def preview_excel(
     file_bytes: bytes,
     filename: str,
@@ -177,6 +260,7 @@ def preview_excel(
 
     mapped_source = set(src_to_sys.keys())
     extra_source_columns = [c for c in source_columns if c not in mapped_source]
+    recommended_profile = _recommend_import_profile(source_columns)
 
     return {
         "sheets": sheets,
@@ -186,6 +270,7 @@ def preview_excel(
         "suggested_mappings": suggested_mappings,
         "unmapped_system_fields": unmapped_sys,
         "extra_source_columns": extra_source_columns,
+        "recommended_profile": recommended_profile,
     }
 
 
@@ -251,11 +336,21 @@ _VENDOR_BOOKS_INSERT_SQL = (
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
+_VENDOR_BOOKS_UPDATE_SQL = (
+    "UPDATE vendor_books SET "
+    "batch_id = ?, award_item = ?, vendor_seq = ?, title = ?, author = ?, isbn = ?, isbn_normalized = ?, "
+    "publish_date = ?, list_price = ?, purchase_price = ?, publisher = ?, age_range = ?, "
+    "isbn_status = ?, completeness_status = ?, extra_fields = ?, source_row_number = ?, raw_row = ?, "
+    "category = ?, book_type = ?, policy_topic = ?, summary = ?, source_url = ?, recommendation_source = ?, "
+    "eligibility_label = ?, classification_number = ?, award_notes = ? "
+    "WHERE id = ?"
+)
+
 
 def _insert_vendor_books_core(
     conn,
     df: pd.DataFrame,
-    project_id: int,
+    project_id: int | None,
     proj_type: str | None,
     filename: str,
     mappings: dict,
@@ -266,22 +361,22 @@ def _insert_vendor_books_core(
     pp_formula_map: dict,
     record_row_numbers: bool,
     award_overrides: dict | None = None,
-) -> tuple[int, int, int]:
+    vendor_name: str | None = None,
+    import_mode: str = "upsert",
+) -> dict:
     """
-    Shared core logic for inserting vendor_books rows into an open transaction.
+    Shared core logic for inserting/upserting vendor_books rows into the shared catalog pool.
     mappings is {sys_field: src_col}.
-    Returns (batch_id, records_inserted, skipped_count). Does NOT commit.
+    Returns summary dict. Does NOT commit.
     """
-    now = datetime.now(timezone.utc).isoformat()
-    _clear_vendor_books_for_project(conn, project_id)
-    batch_row = conn.execute(
-        "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
-        "imported_by, imported_at) VALUES (?, 'vendor_books', ?, ?, ?, ?)",
-        (project_id, filename, profile_id, user_id, now),
-    )
-    batch_id = batch_row.lastrowid
+    _ = project_id
+    if import_mode not in VALID_IMPORT_MODES:
+        raise ValueError(f"不支援的匯入模式：{import_mode}（僅支援 upsert 或 replace_vendor）")
 
-    rows_to_insert: list[tuple] = []
+    normalized_vendor = normalize_vendor_name(vendor_name)
+    now = datetime.now(timezone.utc).isoformat()
+
+    parsed_rows: list[dict] = []
     skipped_count = 0
 
     for enum_idx, (_, row) in enumerate(df.iterrows()):
@@ -320,7 +415,8 @@ def _insert_vendor_books_core(
         award_item = get_field("award_item")
         raw_award = (award_item or "").strip()
         override = award_overrides.get(raw_award) if award_overrides else None
-        if isinstance(override, dict):
+        has_award_override = isinstance(override, dict)
+        if has_award_override:
             recommendation_source = override.get("recommendation_source") or None
             eligibility_label = override.get("eligibility_label") or None
             award_notes = override.get("award_notes") or None
@@ -329,77 +425,264 @@ def _insert_vendor_books_core(
             eligibility_label = get_field("eligibility_label")
             award_notes = get_field("award_notes")
 
-        book = {
-            "title": title,
-            "list_price": list_price,
-            "purchase_price": purchase_price,
-            "author": get_field("author"),
-            "publisher": get_field("publisher"),
-            "award_item": award_item,
-            "eligibility_label": eligibility_label,
-            "recommendation_source": recommendation_source,
-        }
-        completeness = compute_completeness(book, project_type=proj_type)
-
-        rows_to_insert.append(
-            (
-                batch_id,
-                book["award_item"],
-                get_field("vendor_seq"),
-                book["title"],
-                book["author"],
-                isbn_raw,
-                isbn_norm,
-                get_field("publish_date"),
-                book["list_price"],
-                book["purchase_price"],
-                book["publisher"],
-                get_field("age_range"),
-                isbn_status,
-                completeness,
-                json.dumps(extra_fields, ensure_ascii=False) if extra_fields else None,
-                source_row_number,
-                json.dumps(raw, ensure_ascii=False),
-                get_field("category"),
-                get_field("book_type"),
-                get_field("policy_topic"),
-                get_field("summary"),
-                get_field("source_url"),
-                recommendation_source,
-                eligibility_label,
-                get_field("classification_number"),
-                award_notes,
-            )
+        parsed_rows.append(
+            {
+                "award_item": award_item,
+                "vendor_seq": get_field("vendor_seq"),
+                "title": title,
+                "author": get_field("author"),
+                "isbn": isbn_raw,
+                "isbn_normalized": isbn_norm,
+                "publish_date": get_field("publish_date"),
+                "list_price": list_price,
+                "purchase_price": purchase_price,
+                "publisher": get_field("publisher"),
+                "age_range": get_field("age_range"),
+                "isbn_status": isbn_status,
+                "extra_fields": json.dumps(extra_fields, ensure_ascii=False) if extra_fields else None,
+                "source_row_number": source_row_number,
+                "raw_row": json.dumps(raw, ensure_ascii=False),
+                "category": get_field("category"),
+                "book_type": get_field("book_type"),
+                "policy_topic": get_field("policy_topic"),
+                "summary": get_field("summary"),
+                "source_url": get_field("source_url"),
+                "recommendation_source": recommendation_source,
+                "eligibility_label": eligibility_label,
+                "classification_number": get_field("classification_number"),
+                "award_notes": award_notes,
+                "has_award_override": has_award_override,
+            }
         )
 
-    if not rows_to_insert:
+    if not parsed_rows:
         raise ValueError("未解析到任何有效書目資料，已保留原有書單")
 
-    conn.executemany(_VENDOR_BOOKS_INSERT_SQL, rows_to_insert)
-    records_inserted = len(rows_to_insert)
+    if import_mode == "replace_vendor":
+        _clear_vendor_books_by_vendor(conn, normalized_vendor)
+
+    batch_row = conn.execute(
+        "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
+        "vendor_name, imported_by, imported_at) VALUES (NULL, 'vendor_books', ?, ?, ?, ?, ?)",
+        (filename, profile_id, normalized_vendor, user_id, now),
+    )
+    batch_id = batch_row.lastrowid
+
+    inserted_count = 0
+    updated_count = 0
+    preserved_override_count = 0
+
+    if import_mode == "replace_vendor":
+        rows_to_insert: list[tuple] = []
+        for item in parsed_rows:
+            completeness = compute_completeness(item, project_type=proj_type)
+            rows_to_insert.append(
+                (
+                    batch_id,
+                    item["award_item"],
+                    item["vendor_seq"],
+                    item["title"],
+                    item["author"],
+                    item["isbn"],
+                    item["isbn_normalized"],
+                    item["publish_date"],
+                    item["list_price"],
+                    item["purchase_price"],
+                    item["publisher"],
+                    item["age_range"],
+                    item["isbn_status"],
+                    completeness,
+                    item["extra_fields"],
+                    item["source_row_number"],
+                    item["raw_row"],
+                    item["category"],
+                    item["book_type"],
+                    item["policy_topic"],
+                    item["summary"],
+                    item["source_url"],
+                    item["recommendation_source"],
+                    item["eligibility_label"],
+                    item["classification_number"],
+                    item["award_notes"],
+                )
+            )
+        conn.executemany(_VENDOR_BOOKS_INSERT_SQL, rows_to_insert)
+        inserted_count = len(rows_to_insert)
+    else:
+        existing_rows = conn.execute(
+            "SELECT vb.id, vb.isbn_normalized, vb.user_overrides, "
+            "vb.recommendation_source, vb.eligibility_label, vb.award_notes "
+            "FROM vendor_books vb "
+            "JOIN import_batches ib ON ib.id = vb.batch_id "
+            "WHERE ib.batch_type = 'vendor_books' "
+            "  AND COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) = ? "
+            "  AND vb.isbn_status = 'valid' "
+            "  AND vb.isbn_normalized IS NOT NULL "
+            "ORDER BY vb.id ASC",
+            (DEFAULT_VENDOR_NAME, normalized_vendor),
+        ).fetchall()
+        existing_by_isbn: dict[str, dict] = {r["isbn_normalized"]: dict(r) for r in existing_rows}
+
+        update_rows_by_id: dict[int, tuple] = {}
+        insert_rows: list[tuple] = []
+        insert_index_by_isbn: dict[str, int] = {}
+        preserved_ids: set[int] = set()
+
+        for item in parsed_rows:
+            isbn_norm = item["isbn_normalized"]
+            existing = existing_by_isbn.get(isbn_norm) if (item["isbn_status"] == "valid" and isbn_norm) else None
+
+            if existing is not None:
+                existing_id = int(existing["id"])
+                existing_overrides_raw = existing.get("user_overrides")
+                try:
+                    existing_overrides = json.loads(existing_overrides_raw) if existing_overrides_raw else {}
+                except (TypeError, json.JSONDecodeError):
+                    existing_overrides = {}
+                if not isinstance(existing_overrides, dict):
+                    existing_overrides = {}
+
+                if existing_overrides and existing_id not in preserved_ids:
+                    preserved_ids.add(existing_id)
+                    preserved_override_count += 1
+
+                if not item["has_award_override"]:
+                    rec_source = existing.get("recommendation_source") or item["recommendation_source"]
+                    elig_label = existing.get("eligibility_label") or item["eligibility_label"]
+                    award_notes = existing.get("award_notes") or item["award_notes"]
+                else:
+                    rec_source = item["recommendation_source"]
+                    elig_label = item["eligibility_label"]
+                    award_notes = item["award_notes"]
+
+                merged_book = {
+                    "title": item["title"],
+                    "list_price": item["list_price"],
+                    "purchase_price": item["purchase_price"],
+                    "author": item["author"],
+                    "publisher": item["publisher"],
+                    "award_item": item["award_item"],
+                    "eligibility_label": elig_label,
+                    "recommendation_source": rec_source,
+                }
+                completeness = compute_completeness(merged_book, overrides=existing_overrides, project_type=proj_type)
+
+                update_rows_by_id[existing_id] = (
+                    batch_id,
+                    item["award_item"],
+                    item["vendor_seq"],
+                    item["title"],
+                    item["author"],
+                    item["isbn"],
+                    item["isbn_normalized"],
+                    item["publish_date"],
+                    item["list_price"],
+                    item["purchase_price"],
+                    item["publisher"],
+                    item["age_range"],
+                    item["isbn_status"],
+                    completeness,
+                    item["extra_fields"],
+                    item["source_row_number"],
+                    item["raw_row"],
+                    item["category"],
+                    item["book_type"],
+                    item["policy_topic"],
+                    item["summary"],
+                    item["source_url"],
+                    rec_source,
+                    elig_label,
+                    item["classification_number"],
+                    award_notes,
+                    existing_id,
+                )
+                existing["recommendation_source"] = rec_source
+                existing["eligibility_label"] = elig_label
+                existing["award_notes"] = award_notes
+            else:
+                completeness = compute_completeness(item, project_type=proj_type)
+                insert_tuple = (
+                    batch_id,
+                    item["award_item"],
+                    item["vendor_seq"],
+                    item["title"],
+                    item["author"],
+                    item["isbn"],
+                    item["isbn_normalized"],
+                    item["publish_date"],
+                    item["list_price"],
+                    item["purchase_price"],
+                    item["publisher"],
+                    item["age_range"],
+                    item["isbn_status"],
+                    completeness,
+                    item["extra_fields"],
+                    item["source_row_number"],
+                    item["raw_row"],
+                    item["category"],
+                    item["book_type"],
+                    item["policy_topic"],
+                    item["summary"],
+                    item["source_url"],
+                    item["recommendation_source"],
+                    item["eligibility_label"],
+                    item["classification_number"],
+                    item["award_notes"],
+                )
+                if item["isbn_status"] == "valid" and isbn_norm and isbn_norm in insert_index_by_isbn:
+                    insert_rows[insert_index_by_isbn[isbn_norm]] = insert_tuple
+                else:
+                    if item["isbn_status"] == "valid" and isbn_norm:
+                        insert_index_by_isbn[isbn_norm] = len(insert_rows)
+                    insert_rows.append(insert_tuple)
+
+        if update_rows_by_id:
+            conn.executemany(_VENDOR_BOOKS_UPDATE_SQL, list(update_rows_by_id.values()))
+        if insert_rows:
+            conn.executemany(_VENDOR_BOOKS_INSERT_SQL, insert_rows)
+        updated_count = len(update_rows_by_id)
+        inserted_count = len(insert_rows)
+
+    record_count = inserted_count + updated_count
     conn.execute(
         "UPDATE import_batches SET record_count = ? WHERE id = ?",
-        (records_inserted, batch_id),
+        (record_count, batch_id),
     )
-    return batch_id, records_inserted, skipped_count
+    return {
+        "batch_id": batch_id,
+        "vendor_name": normalized_vendor,
+        "import_mode": import_mode,
+        "record_count": record_count,
+        "inserted_count": inserted_count,
+        "updated_count": updated_count,
+        "preserved_override_count": preserved_override_count,
+        "skipped_count": skipped_count,
+    }
 
 
 def confirm_import(
     file_bytes: bytes,
     filename: str,
-    project_id: int,
-    sheet_name: str | None,
-    header_row: int,
-    mappings: dict,
-    extra_field_settings: list,
-    user_id: int,
+    project_id: int | None = None,
+    sheet_name: str | None = None,
+    header_row: int = 0,
+    mappings: dict | None = None,
+    extra_field_settings: list | None = None,
+    user_id: int = 0,
     profile_id: int | None = None,
     award_overrides: dict | None = None,
+    vendor_name: str | None = None,
+    import_mode: str = "upsert",
 ) -> dict:
     """
-    Formally import vendor books using user-confirmed mappings (sys_field → src_col).
+    Formally import vendor books into the shared catalog pool using user-confirmed mappings (sys_field → src_col).
     header_row is 0-based.
     """
+    if import_mode not in VALID_IMPORT_MODES:
+        raise ValueError(f"不支援的匯入模式：{import_mode}（僅支援 upsert 或 replace_vendor）")
+
+    mappings = mappings or {}
+    extra_field_settings = extra_field_settings or []
     engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
     sheet = sheet_name if sheet_name else 0
 
@@ -419,9 +702,14 @@ def confirm_import(
     df.columns = [str(c).strip() for c in df.columns]
 
     with db_session(get_connection) as conn:
-        proj_row = conn.execute("SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)).fetchone()
-        proj_type = proj_row["project_type"] if proj_row else None
-        batch_id, records_inserted, skipped_count = _insert_vendor_books_core(
+        proj_type = None
+        if project_id is not None:
+            proj_row = conn.execute(
+                "SELECT project_type FROM procurement_projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+            proj_type = proj_row["project_type"] if proj_row else None
+        result = _insert_vendor_books_core(
             conn=conn,
             df=df,
             project_id=project_id,
@@ -435,14 +723,11 @@ def confirm_import(
             pp_formula_map=pp_formula_map,
             record_row_numbers=True,
             award_overrides=award_overrides,
+            vendor_name=vendor_name,
+            import_mode=import_mode,
         )
         conn.commit()
 
-    result = {
-        "batch_id": batch_id,
-        "record_count": records_inserted,
-        "skipped_count": skipped_count,
-    }
     try:
         result["match_stats"] = run_match(project_id)
     except Exception as e:
@@ -461,8 +746,7 @@ def import_library_holdings(
     engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
     sheets = _list_excel_sheets(file_bytes, engine)
 
-    conn = get_connection()
-    try:
+    with db_session(get_connection) as conn:
         _clear_library_holdings(conn)
 
         batch_row = conn.execute(
@@ -479,11 +763,11 @@ def import_library_holdings(
         last_unmapped: list = []
 
         for sheet_name in sheets:
-            result = _read_library_sheet(file_bytes, engine, sheet_name)
-            if result is None:
+            sheet_res = _read_library_sheet(file_bytes, engine, sheet_name)
+            if sheet_res is None:
                 skipped_sheets.append({"sheet_name": str(sheet_name), "reason": "無 isbn 或 title 欄位"})
                 continue
-            df, mapping, unmapped = result
+            df, mapping, unmapped = sheet_res
             if column_overrides:
                 mapping.update(column_overrides)
             n = _insert_library_holding_rows(conn, batch_id, df, mapping)
@@ -499,13 +783,8 @@ def import_library_holdings(
             (records_inserted, batch_id),
         )
         conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
-    result = {
+    result: dict = {
         "batch_id": batch_id,
         "replaced": True,
         "record_count": records_inserted,
@@ -518,20 +797,29 @@ def import_library_holdings(
         "match_stats_by_project": {},
     }
     try:
-        conn2 = get_connection()
-        project_ids = [
-            r[0]
-            for r in conn2.execute(
-                "SELECT DISTINCT project_id FROM import_batches "
-                "WHERE batch_type='vendor_books' AND project_id IS NOT NULL"
-            ).fetchall()
-        ]
-        conn2.close()
-        for pid in project_ids:
-            stats = run_match(pid)
-            result["affected_projects"].append(pid)
-            result["match_stats_by_project"][str(pid)] = stats
-        result["match_rerun"] = bool(result["affected_projects"])
+        with db_session(get_connection) as conn2:
+            vendor_book_exists = (
+                conn2.execute(
+                    "SELECT 1 FROM vendor_books vb "
+                    "JOIN import_batches ib ON ib.id = vb.batch_id "
+                    "WHERE ib.batch_type = 'vendor_books' LIMIT 1"
+                ).fetchone()
+                is not None
+            )
+            legacy_project_ids = [
+                r[0]
+                for r in conn2.execute(
+                    "SELECT DISTINCT project_id FROM import_batches "
+                    "WHERE batch_type='vendor_books' AND project_id IS NOT NULL"
+                ).fetchall()
+            ]
+        if vendor_book_exists:
+            stats = run_match()
+            result["match_stats"] = stats
+            result["match_rerun"] = True
+            for pid in legacy_project_ids:
+                result["affected_projects"].append(pid)
+                result["match_stats_by_project"][str(pid)] = stats
     except Exception as e:
         result["match_rerun_error"] = str(e)
     return result
@@ -540,12 +828,17 @@ def import_library_holdings(
 def import_vendor_books(
     file_bytes: bytes,
     filename: str,
-    project_id: int,
-    user_id: int,
+    project_id: int | None = None,
+    user_id: int = 0,
     profile_id: int | None = None,
     column_overrides: dict | None = None,
+    vendor_name: str | None = None,
+    import_mode: str = "upsert",
 ) -> dict:
     """Legacy single-step import with auto-detected column mapping."""
+    if import_mode not in VALID_IMPORT_MODES:
+        raise ValueError(f"不支援的匯入模式：{import_mode}（僅支援 upsert 或 replace_vendor）")
+
     engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
     header_row = _detect_header_row(file_bytes, engine, VENDOR_COLUMN_HINTS)
     df = pd.read_excel(
@@ -568,9 +861,14 @@ def import_vendor_books(
             pp_formula_map = _build_formula_fallback(file_bytes, 0, header_row, pp_src_col)
 
     with db_session(get_connection) as conn:
-        proj_row = conn.execute("SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)).fetchone()
-        proj_type = proj_row["project_type"] if proj_row else None
-        batch_id, records_inserted, _ = _insert_vendor_books_core(
+        proj_type = None
+        if project_id is not None:
+            proj_row = conn.execute(
+                "SELECT project_type FROM procurement_projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+            proj_type = proj_row["project_type"] if proj_row else None
+        result = _insert_vendor_books_core(
             conn=conn,
             df=df,
             project_id=project_id,
@@ -583,15 +881,13 @@ def import_vendor_books(
             header_row=header_row,
             pp_formula_map=pp_formula_map,
             record_row_numbers=False,
+            vendor_name=vendor_name,
+            import_mode=import_mode,
         )
         conn.commit()
 
-    result = {
-        "batch_id": batch_id,
-        "record_count": records_inserted,
-        "unmapped_fields": unmapped,
-        "column_mapping": mapping,
-    }
+    result["unmapped_fields"] = unmapped
+    result["column_mapping"] = mapping
     try:
         result["match_stats"] = run_match(project_id)
     except Exception as e:
@@ -693,42 +989,170 @@ def _clear_library_holdings(conn) -> None:
         conn.execute(f"DELETE FROM import_batches WHERE id IN ({ph})", batch_ids)
 
 
-def _clear_vendor_books_for_project(conn, project_id: int) -> None:
+def _clear_vendor_books_for_project(conn, project_id: int) -> tuple[int, int, int]:
     """
-    Remove vendor_books-related source data for a project before re-import.
+    Remove legacy vendor_books-related source data bound to a specific project_id.
     Deletion order: book_matches → vendor_books → import_batches.
     selection_items are NOT deleted — they carry self-contained snapshots.
-    Only touches batch_type='vendor_books'; does NOT commit — caller owns the transaction.
+    Does NOT commit — caller owns the transaction.
     """
-    old_batch_ids = [
-        r[0]
-        for r in conn.execute(
-            "SELECT id FROM import_batches WHERE project_id=? AND batch_type='vendor_books'",
-            (project_id,),
+    vendor_books_count = conn.execute(
+        "SELECT COUNT(*) FROM vendor_books vb "
+        "JOIN import_batches ib ON ib.id = vb.batch_id "
+        "WHERE ib.project_id = ? AND ib.batch_type = 'vendor_books'",
+        (project_id,),
+    ).fetchone()[0]
+    matches_count = conn.execute(
+        "SELECT COUNT(*) FROM book_matches bm "
+        "JOIN vendor_books vb ON vb.id = bm.vendor_book_id "
+        "JOIN import_batches ib ON ib.id = vb.batch_id "
+        "WHERE ib.project_id = ? AND ib.batch_type = 'vendor_books'",
+        (project_id,),
+    ).fetchone()[0]
+    batches_count = conn.execute(
+        "SELECT COUNT(*) FROM import_batches WHERE project_id = ? AND batch_type = 'vendor_books'",
+        (project_id,),
+    ).fetchone()[0]
+
+    if batches_count == 0:
+        return 0, 0, 0
+
+    conn.execute(
+        "DELETE FROM book_matches WHERE vendor_book_id IN ("
+        "  SELECT vb.id FROM vendor_books vb "
+        "  JOIN import_batches ib ON ib.id = vb.batch_id "
+        "  WHERE ib.project_id = ? AND ib.batch_type = 'vendor_books'"
+        ")",
+        (project_id,),
+    )
+    conn.execute(
+        "DELETE FROM vendor_books WHERE batch_id IN ("
+        "  SELECT id FROM import_batches WHERE project_id = ? AND batch_type = 'vendor_books'"
+        ")",
+        (project_id,),
+    )
+    conn.execute(
+        "DELETE FROM import_batches WHERE project_id = ? AND batch_type = 'vendor_books'",
+        (project_id,),
+    )
+    return vendor_books_count, matches_count, batches_count
+
+
+def _clear_vendor_books_by_vendor(conn, vendor_name: str) -> tuple[int, int, int]:
+    """
+    Remove vendor_books-related source data for a specific normalized vendor_name.
+    Deletion order: book_matches → vendor_books → import_batches.
+    selection_items are NOT deleted. Does NOT commit.
+    """
+    normalized_vendor = normalize_vendor_name(vendor_name)
+    vendor_books_count = conn.execute(
+        "SELECT COUNT(*) FROM vendor_books vb "
+        "JOIN import_batches ib ON ib.id = vb.batch_id "
+        "WHERE ib.batch_type = 'vendor_books' "
+        "  AND COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) = ?",
+        (DEFAULT_VENDOR_NAME, normalized_vendor),
+    ).fetchone()[0]
+    matches_count = conn.execute(
+        "SELECT COUNT(*) FROM book_matches bm "
+        "JOIN vendor_books vb ON vb.id = bm.vendor_book_id "
+        "JOIN import_batches ib ON ib.id = vb.batch_id "
+        "WHERE ib.batch_type = 'vendor_books' "
+        "  AND COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) = ?",
+        (DEFAULT_VENDOR_NAME, normalized_vendor),
+    ).fetchone()[0]
+    batches_count = conn.execute(
+        "SELECT COUNT(*) FROM import_batches "
+        "WHERE batch_type = 'vendor_books' "
+        "  AND COALESCE(NULLIF(TRIM(vendor_name), ''), ?) = ?",
+        (DEFAULT_VENDOR_NAME, normalized_vendor),
+    ).fetchone()[0]
+
+    if batches_count == 0:
+        return 0, 0, 0
+
+    conn.execute(
+        "DELETE FROM book_matches WHERE vendor_book_id IN ("
+        "  SELECT vb.id FROM vendor_books vb "
+        "  JOIN import_batches ib ON ib.id = vb.batch_id "
+        "  WHERE ib.batch_type = 'vendor_books' "
+        "    AND COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) = ?"
+        ")",
+        (DEFAULT_VENDOR_NAME, normalized_vendor),
+    )
+    conn.execute(
+        "DELETE FROM vendor_books WHERE batch_id IN ("
+        "  SELECT id FROM import_batches "
+        "  WHERE batch_type = 'vendor_books' "
+        "    AND COALESCE(NULLIF(TRIM(vendor_name), ''), ?) = ?"
+        ")",
+        (DEFAULT_VENDOR_NAME, normalized_vendor),
+    )
+    conn.execute(
+        "DELETE FROM import_batches "
+        "WHERE batch_type = 'vendor_books' "
+        "  AND COALESCE(NULLIF(TRIM(vendor_name), ''), ?) = ?",
+        (DEFAULT_VENDOR_NAME, normalized_vendor),
+    )
+    return vendor_books_count, matches_count, batches_count
+
+
+def _clear_all_vendor_books(conn) -> tuple[int, int, int]:
+    """
+    Remove all vendor_books source data across the shared catalog pool.
+    selection_items are NOT deleted. Does NOT commit.
+    """
+    vendor_books_count = conn.execute(
+        "SELECT COUNT(*) FROM vendor_books vb "
+        "JOIN import_batches ib ON ib.id = vb.batch_id "
+        "WHERE ib.batch_type = 'vendor_books'"
+    ).fetchone()[0]
+    matches_count = conn.execute(
+        "SELECT COUNT(*) FROM book_matches bm "
+        "JOIN vendor_books vb ON vb.id = bm.vendor_book_id "
+        "JOIN import_batches ib ON ib.id = vb.batch_id "
+        "WHERE ib.batch_type = 'vendor_books'"
+    ).fetchone()[0]
+    batches_count = conn.execute("SELECT COUNT(*) FROM import_batches WHERE batch_type = 'vendor_books'").fetchone()[0]
+
+    if batches_count == 0:
+        return 0, 0, 0
+
+    conn.execute(
+        "DELETE FROM book_matches WHERE vendor_book_id IN ("
+        "  SELECT vb.id FROM vendor_books vb "
+        "  JOIN import_batches ib ON ib.id = vb.batch_id "
+        "  WHERE ib.batch_type = 'vendor_books'"
+        ")"
+    )
+    conn.execute(
+        "DELETE FROM vendor_books WHERE batch_id IN (SELECT id FROM import_batches WHERE batch_type = 'vendor_books')"
+    )
+    conn.execute("DELETE FROM import_batches WHERE batch_type = 'vendor_books'")
+    return vendor_books_count, matches_count, batches_count
+
+
+def list_vendors() -> list[dict]:
+    """Return summary of vendors present in the shared vendor catalog pool."""
+    with db_session(get_connection) as conn:
+        rows = conn.execute(
+            "SELECT "
+            "  COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) AS vendor_name, "
+            "  COUNT(vb.id) AS book_count, "
+            "  COUNT(DISTINCT ib.id) AS batch_count, "
+            "  MAX(ib.imported_at) AS last_imported_at "
+            "FROM import_batches ib "
+            "LEFT JOIN vendor_books vb ON vb.batch_id = ib.id "
+            "WHERE ib.batch_type = 'vendor_books' "
+            "GROUP BY COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) "
+            "ORDER BY last_imported_at DESC, vendor_name ASC",
+            (DEFAULT_VENDOR_NAME, DEFAULT_VENDOR_NAME),
         ).fetchall()
-    ]
-    if not old_batch_ids:
-        return
-
-    ph = ",".join("?" * len(old_batch_ids))
-
-    conn.execute(
-        f"DELETE FROM book_matches WHERE vendor_book_id IN (SELECT id FROM vendor_books WHERE batch_id IN ({ph}))",
-        old_batch_ids,
-    )
-    conn.execute(
-        f"DELETE FROM vendor_books WHERE batch_id IN ({ph})",
-        old_batch_ids,
-    )
-    conn.execute(
-        f"DELETE FROM import_batches WHERE id IN ({ph})",
-        old_batch_ids,
-    )
+    return [dict(r) for r in rows]
 
 
 def clear_library_holdings(user_id: int) -> dict:
-    conn = get_connection()
-    try:
+    _ = user_id
+    with db_session(get_connection) as conn:
         holdings_count = conn.execute("SELECT COUNT(*) FROM library_holdings").fetchone()[0]
         matches_count = conn.execute("SELECT COUNT(*) FROM book_matches WHERE holding_id IS NOT NULL").fetchone()[0]
         batches_count = conn.execute(
@@ -736,11 +1160,6 @@ def clear_library_holdings(user_id: int) -> dict:
         ).fetchone()[0]
         _clear_library_holdings(conn)
         conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
     return {
         "deleted_holdings": holdings_count,
         "deleted_matches": matches_count,
@@ -748,55 +1167,63 @@ def clear_library_holdings(user_id: int) -> dict:
     }
 
 
-def clear_vendor_books(project_id: int, user_id: int) -> dict:
-    conn = get_connection()
-    try:
-        project = conn.execute("SELECT id FROM procurement_projects WHERE id=?", (project_id,)).fetchone()
-        if project is None:
-            raise ValueError(f"project_id {project_id} 不存在")
+def clear_vendor_books(
+    project_id: int | None = None,
+    user_id: int = 0,
+    vendor_name: str | None = None,
+    clear_all: bool = False,
+) -> dict:
+    _ = user_id
+    with db_session(get_connection) as conn:
+        if clear_all:
+            vendor_books_count, matches_count, batches_count = _clear_all_vendor_books(conn)
+            preserved_count = conn.execute("SELECT COUNT(*) FROM selection_items").fetchone()[0]
+            conn.commit()
+            return {
+                "clear_all": True,
+                "vendor_name": None,
+                "project_id": project_id,
+                "deleted_vendor_books": vendor_books_count,
+                "deleted_matches": matches_count,
+                "deleted_batches": batches_count,
+                "preserved_selection_items": preserved_count,
+            }
 
-        old_batch_ids = [
-            r[0]
-            for r in conn.execute(
-                "SELECT id FROM import_batches WHERE project_id=? AND batch_type='vendor_books'",
-                (project_id,),
-            ).fetchall()
-        ]
+        if vendor_name is not None and vendor_name.strip():
+            normalized_vendor = normalize_vendor_name(vendor_name)
+            vendor_books_count, matches_count, batches_count = _clear_vendor_books_by_vendor(conn, normalized_vendor)
+            preserved_count = conn.execute("SELECT COUNT(*) FROM selection_items").fetchone()[0]
+            conn.commit()
+            return {
+                "clear_all": False,
+                "vendor_name": normalized_vendor,
+                "project_id": project_id,
+                "deleted_vendor_books": vendor_books_count,
+                "deleted_matches": matches_count,
+                "deleted_batches": batches_count,
+                "preserved_selection_items": preserved_count,
+            }
 
-        if old_batch_ids:
-            ph = ",".join("?" * len(old_batch_ids))
-            vendor_books_count = conn.execute(
-                f"SELECT COUNT(*) FROM vendor_books WHERE batch_id IN ({ph})",
-                old_batch_ids,
+        if project_id is not None:
+            project = conn.execute("SELECT id FROM procurement_projects WHERE id=?", (project_id,)).fetchone()
+            if project is None:
+                raise ValueError(f"project_id {project_id} 不存在")
+            vendor_books_count, matches_count, batches_count = _clear_vendor_books_for_project(conn, project_id)
+            preserved_count = conn.execute(
+                "SELECT COUNT(*) FROM selection_items WHERE project_id=?", (project_id,)
             ).fetchone()[0]
-            matches_count = conn.execute(
-                f"SELECT COUNT(*) FROM book_matches WHERE vendor_book_id IN "
-                f"(SELECT id FROM vendor_books WHERE batch_id IN ({ph}))",
-                old_batch_ids,
-            ).fetchone()[0]
-        else:
-            vendor_books_count = 0
-            matches_count = 0
+            conn.commit()
+            return {
+                "clear_all": False,
+                "vendor_name": None,
+                "project_id": project_id,
+                "deleted_vendor_books": vendor_books_count,
+                "deleted_matches": matches_count,
+                "deleted_batches": batches_count,
+                "preserved_selection_items": preserved_count,
+            }
 
-        batches_count = len(old_batch_ids)
-        preserved_count = conn.execute(
-            "SELECT COUNT(*) FROM selection_items WHERE project_id=?", (project_id,)
-        ).fetchone()[0]
-
-        _clear_vendor_books_for_project(conn, project_id)
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-    return {
-        "project_id": project_id,
-        "deleted_vendor_books": vendor_books_count,
-        "deleted_matches": matches_count,
-        "deleted_batches": batches_count,
-        "preserved_selection_items": preserved_count,
-    }
+        raise ValueError("請指定 vendor_name、clear_all=true 或 project_id")
 
 
 def _read_library_sheet(file_bytes: bytes, engine: str, sheet_name) -> tuple | None:

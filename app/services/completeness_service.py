@@ -45,22 +45,23 @@ def compute(
     return "export_ready"
 
 
-def recompute_for_book(vendor_book_id: int) -> str:
+def recompute_for_book(vendor_book_id: int, project_type: str | None = None) -> str:
     with db_session(get_connection) as conn:
         row = conn.execute(
             "SELECT vb.*, pp.project_type "
             "FROM vendor_books vb "
             "JOIN import_batches ib ON vb.batch_id = ib.id "
-            "JOIN procurement_projects pp ON ib.project_id = pp.id "
+            "LEFT JOIN procurement_projects pp ON ib.project_id = pp.id "
             "WHERE vb.id = ?",
             (vendor_book_id,),
         ).fetchone()
         if row is None:
             return "unknown"
         book = dict(row)
-        project_type = book.pop("project_type", None)
+        db_project_type = book.pop("project_type", None)
+        effective_project_type = project_type if project_type is not None else db_project_type
         overrides = json.loads(book.get("user_overrides") or "{}")
-        status = compute(book, overrides, project_type=project_type)
+        status = compute(book, overrides, project_type=effective_project_type)
         conn.execute(
             "UPDATE vendor_books SET completeness_status = ? WHERE id = ?",
             (status, vendor_book_id),
