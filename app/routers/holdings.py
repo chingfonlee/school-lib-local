@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 
 from app.auth import require_auth
-from app.database import get_connection
+from app.database import db_session, get_connection
 from app.services.isbn_service import normalize_isbn
 
 router = APIRouter(prefix="/api/holdings", tags=["holdings"])
@@ -69,18 +69,17 @@ async def search_holdings(
         params.extend(q_params)
 
     where = " AND ".join(where_clauses)
-    conn = get_connection()
-    total = conn.execute(
-        f"SELECT COUNT(*) FROM library_holdings WHERE {where}", params
-    ).fetchone()[0]
-    rows = conn.execute(
-        f"SELECT id, title, author, publisher, publish_year, isbn, library_record_id, price "
-        f"FROM library_holdings WHERE {where} "
-        f"ORDER BY title ASC, library_record_id ASC "
-        f"LIMIT ? OFFSET ?",
-        params + [limit, offset],
-    ).fetchall()
-    conn.close()
+    with db_session(get_connection) as conn:
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM library_holdings WHERE {where}", params
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT id, title, author, publisher, publish_year, isbn, library_record_id, price "
+            f"FROM library_holdings WHERE {where} "
+            f"ORDER BY title ASC, library_record_id ASC "
+            f"LIMIT ? OFFSET ?",
+            params + [limit, offset],
+        ).fetchall()
 
     return {
         "total": total,

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, HTTPException
 from passlib.hash import bcrypt
 from pydantic import BaseModel
 
-from app.database import get_connection
+from app.database import db_session, get_connection
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -14,12 +14,11 @@ class LoginRequest(BaseModel):
 
 @router.post("/login")
 async def login(req: LoginRequest, request: Request):
-    conn = get_connection()
-    user = conn.execute(
-        "SELECT id, password_hash, display_name FROM users WHERE username = ?",
-        (req.username,),
-    ).fetchone()
-    conn.close()
+    with db_session(get_connection) as conn:
+        user = conn.execute(
+            "SELECT id, password_hash, display_name FROM users WHERE username = ?",
+            (req.username,),
+        ).fetchone()
     if user is None or not bcrypt.verify(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
     request.session["user_id"] = user["id"]

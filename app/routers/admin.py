@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.auth import require_auth
-from app.database import get_connection
+from app.database import db_session, get_connection
 from app.services.template_analyzer import analyze_template, FIELD_LABELS
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -40,11 +40,10 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
 
 @router.get("/templates")
 async def list_templates(user_id: int = Depends(require_auth)):
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM export_templates ORDER BY id"
-    ).fetchall()
-    conn.close()
+    with db_session(get_connection) as conn:
+        rows = conn.execute(
+            "SELECT * FROM export_templates ORDER BY id"
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -130,55 +129,54 @@ async def save_template(body: SaveTemplateRequest, user_id: int = Depends(requir
     now = datetime.now(timezone.utc).isoformat()
     dest_str = f"./{dest.as_posix()}"
 
-    conn = get_connection()
-    existing = conn.execute(
-        "SELECT id FROM export_templates WHERE project_type = ?",
-        (body.project_type,),
-    ).fetchone()
+    with db_session(get_connection) as conn:
+        existing = conn.execute(
+            "SELECT id FROM export_templates WHERE project_type = ?",
+            (body.project_type,),
+        ).fetchone()
 
-    if existing:
-        conn.execute(
-            "UPDATE export_templates SET "
-            "template_file_path=?, sheet_name=?, header_row=?, data_start_row=?, "
-            "max_rows=?, school_name_cell=?, approved_budget_cell=?, "
-            "column_mappings=?, updated_at=? "
-            "WHERE project_type=?",
-            (
-                dest_str,
-                body.sheet_name or None,
-                body.header_row,
-                body.data_start_row,
-                body.max_rows,
-                body.school_name_cell,
-                body.approved_budget_cell,
-                col_map_json,
-                now,
-                body.project_type,
-            ),
-        )
-    else:
-        conn.execute(
-            "INSERT INTO export_templates "
-            "(name, project_type, template_file_path, sheet_name, header_row, "
-            "data_start_row, max_rows, school_name_cell, approved_budget_cell, "
-            "column_mappings, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                f"{body.project_type}_uploaded",
-                body.project_type,
-                dest_str,
-                body.sheet_name or None,
-                body.header_row,
-                body.data_start_row,
-                body.max_rows,
-                body.school_name_cell,
-                body.approved_budget_cell,
-                col_map_json,
-                now,
-                now,
-            ),
-        )
+        if existing:
+            conn.execute(
+                "UPDATE export_templates SET "
+                "template_file_path=?, sheet_name=?, header_row=?, data_start_row=?, "
+                "max_rows=?, school_name_cell=?, approved_budget_cell=?, "
+                "column_mappings=?, updated_at=? "
+                "WHERE project_type=?",
+                (
+                    dest_str,
+                    body.sheet_name or None,
+                    body.header_row,
+                    body.data_start_row,
+                    body.max_rows,
+                    body.school_name_cell,
+                    body.approved_budget_cell,
+                    col_map_json,
+                    now,
+                    body.project_type,
+                ),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO export_templates "
+                "(name, project_type, template_file_path, sheet_name, header_row, "
+                "data_start_row, max_rows, school_name_cell, approved_budget_cell, "
+                "column_mappings, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    f"{body.project_type}_uploaded",
+                    body.project_type,
+                    dest_str,
+                    body.sheet_name or None,
+                    body.header_row,
+                    body.data_start_row,
+                    body.max_rows,
+                    body.school_name_cell,
+                    body.approved_budget_cell,
+                    col_map_json,
+                    now,
+                    now,
+                ),
+            )
 
-    conn.commit()
-    conn.close()
+        conn.commit()
     return {"ok": True, "saved_path": str(dest)}

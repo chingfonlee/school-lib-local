@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 from app.auth import require_auth
-from app.database import get_connection
+from app.database import db_session, get_connection
 from app.services.import_service import (
     import_library_holdings,
     import_vendor_books,
@@ -154,25 +154,23 @@ async def list_batches(
     project_id: int | None = None,
     user_id: int = Depends(require_auth),
 ):
-    conn = get_connection()
-    if project_id is not None:
-        rows = conn.execute(
-            "SELECT * FROM import_batches WHERE project_id = ? ORDER BY imported_at DESC",
-            (project_id,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM import_batches ORDER BY imported_at DESC"
-        ).fetchall()
-    conn.close()
+    with db_session(get_connection) as conn:
+        if project_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM import_batches WHERE project_id = ? ORDER BY imported_at DESC",
+                (project_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM import_batches ORDER BY imported_at DESC"
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
 @router.get("/profiles")
 async def list_profiles(user_id: int = Depends(require_auth)):
-    conn = get_connection()
-    rows = conn.execute("SELECT * FROM import_profiles ORDER BY name").fetchall()
-    conn.close()
+    with db_session(get_connection) as conn:
+        rows = conn.execute("SELECT * FROM import_profiles ORDER BY name").fetchall()
     return [dict(r) for r in rows]
 
 
@@ -185,13 +183,12 @@ class ProfileCreate(BaseModel):
 @router.post("/profiles")
 async def create_profile(body: ProfileCreate, user_id: int = Depends(require_auth)):
     now = datetime.now(timezone.utc).isoformat()
-    conn = get_connection()
-    row = conn.execute(
-        "INSERT INTO import_profiles(name, file_type, column_mappings, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (body.name, body.file_type, json.dumps(body.column_mappings, ensure_ascii=False), now, now),
-    )
-    profile_id = row.lastrowid
-    conn.commit()
-    conn.close()
+    with db_session(get_connection) as conn:
+        row = conn.execute(
+            "INSERT INTO import_profiles(name, file_type, column_mappings, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (body.name, body.file_type, json.dumps(body.column_mappings, ensure_ascii=False), now, now),
+        )
+        profile_id = row.lastrowid
+        conn.commit()
     return {"id": profile_id}
