@@ -6,12 +6,38 @@ const PROJECT_TYPE_LABELS = {
   general_books:     '國小一般圖書採購',
   local_culture_jh:  '國中本土文化採購',
   general_books_jh:  '國中一般圖書採購',
+  custom:            '通用／自訂採購',
 };
 function projectTypeLabel(type) {
   return PROJECT_TYPE_LABELS[type] || type;
 }
 function isGeneralBooks(type) {
   return type === 'general_books' || type === 'general_books_jh';
+}
+
+const EXPORT_TEMPLATE_LABELS = {
+  generic_builtin:   '通用採購清單（免範本）',
+  local_culture:     '國小本土文化採購範本',
+  general_books:     '國小一般圖書採購範本',
+  local_culture_jh:  '國中本土文化採購範本',
+  general_books_jh:  '國中一般圖書採購範本',
+};
+function exportTemplateLabel(type) {
+  return EXPORT_TEMPLATE_LABELS[type] || type || '—';
+}
+function defaultExportTemplateForType(projectType) {
+  return projectType === 'custom' ? 'generic_builtin' : (projectType || 'local_culture');
+}
+
+const PROJECT_TYPE_RULE_HINTS = {
+  local_culture:    '檢核規則：必填書名、價格、數量、有效 ISBN；建議填寫作者、出版社、獲獎項目。',
+  general_books:    '檢核規則：必填書名、價格、數量、A欄必選/推薦、H欄推薦來源（特定項目需L欄備註）。',
+  local_culture_jh: '檢核規則：必填書名、價格、數量、有效 ISBN；建議填寫作者、出版社、獲獎項目。',
+  general_books_jh: '檢核規則：必填書名、價格、數量、B欄必選/推薦、K欄獲獎項目（特定項目需備註）。',
+  custom:           '檢核規則：僅必填書名、價格、數量；不強制檢查 ISBN 與獲獎項目，適合校內自籌或一般採購。',
+};
+function projectTypeRuleHint(type) {
+  return PROJECT_TYPE_RULE_HINTS[type] || '';
 }
 
 const H_ALLOWED = [

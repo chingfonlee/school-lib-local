@@ -5,6 +5,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購專案 — 圖書採購系統</title>
 <link rel="stylesheet" href="/css/style.css">
+<style>
+.form-group textarea {
+  width: 100%; padding: 9px 12px;
+  border: 1px solid #c7c7cc; border-radius: 8px;
+  font-size: 14px; font-family: inherit; resize: vertical;
+  transition: border-color 0.15s;
+}
+.form-group textarea:focus {
+  outline: none; border-color: #0071e3;
+  box-shadow: 0 0 0 3px rgba(0,113,227,0.15);
+}
+.rule-hint {
+  font-size: 12px; color: #555; background: #f5f5f7;
+  border-radius: 6px; padding: 8px 12px; margin: -6px 0 14px;
+}
+.pricing-advanced {
+  margin: -6px 0 14px; padding: 10px 12px;
+  background: #f9f9fb; border: 1px solid #e5e5ea; border-radius: 8px;
+}
+.pricing-advanced summary {
+  cursor: pointer; font-size: 13px; font-weight: 500; color: #555;
+  user-select: none;
+}
+.pricing-advanced[open] summary { margin-bottom: 10px; }
+.project-card.archived {
+  opacity: 0.72;
+  background: #fafafa;
+  border-style: dashed;
+}
+.project-tags {
+  display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 6px; vertical-align: middle;
+}
+.badge-year { background: #e3f0fc; color: #0a4f8c; }
+.badge-funding { background: #ede9fe; color: #5b21b6; }
+.project-notes-summary {
+  margin-top: 6px; font-size: 13px; color: #444;
+  background: #f5f5f7; border-left: 3px solid #0071e3;
+  padding: 6px 10px; border-radius: 0 6px 6px 0;
+  white-space: pre-wrap; word-break: break-word;
+}
+.toolbar-toggle {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: #555; cursor: pointer; user-select: none;
+}
+</style>
 </head>
 <body>
 <nav>
@@ -34,6 +79,10 @@
       <span style="font-size:14px;color:#555;font-weight:600">資料庫管理</span>
       <a href="/api/backup/database" class="btn btn-secondary btn-sm" onclick="handleBackupClick(event)">備份資料庫</a>
       <button class="btn btn-secondary btn-sm" onclick="showRestoreModal()">還原資料庫</button>
+      <label class="toolbar-toggle">
+        <input type="checkbox" id="show-archived-toggle" onchange="renderProjects()">
+        顯示已封存專案（<span id="archived-count">0</span>）
+      </label>
     </div>
   </div>
 
@@ -46,35 +95,66 @@
       </div>
       <div class="form-group">
         <label>採購類型</label>
-        <select id="new-type">
+        <select id="new-type" onchange="onNewTypeChange()">
           <option value="local_culture">國小 本土文化採購</option>
           <option value="general_books">國小 一般圖書採購</option>
           <option value="local_culture_jh">國中 本土文化採購</option>
           <option value="general_books_jh">國中 一般圖書採購</option>
+          <option value="custom">通用／自訂採購（校內自籌／家長會／一般）</option>
         </select>
       </div>
     </div>
+    <div id="new-type-rule-hint" class="rule-hint"></div>
     <div class="form-row">
       <div class="form-group">
-        <label>定價欄顯示</label>
-        <select id="new-price-field">
-          <option value="purchase_price">採購單價</option>
-          <option value="list_price">定價</option>
-        </select>
+        <label>匯出範本</label>
+        <select id="new-export-template"></select>
       </div>
       <div class="form-group">
-        <label>小計計算方式</label>
-        <select id="new-subtotal">
-          <option value="quantity_times_purchase_price">數量 × 採購單價</option>
-          <option value="quantity_times_list_price">數量 × 定價</option>
+        <label>計價基準</label>
+        <select id="new-pricing-preset" onchange="applyPricingPreset('new')">
+          <option value="purchase">依實付單價（折後價）</option>
+          <option value="list">依書本定價</option>
+          <option value="custom">自訂進階設定</option>
         </select>
       </div>
     </div>
+    <details id="new-pricing-advanced" class="pricing-advanced">
+      <summary>進階計價設定（個別調整定價欄與小計公式）</summary>
+      <div class="form-row" style="margin-bottom:0">
+        <div class="form-group" style="margin-bottom:0">
+          <label>定價欄顯示</label>
+          <select id="new-price-field" onchange="syncPricingPresetFromAdvanced('new')">
+            <option value="purchase_price">採購單價</option>
+            <option value="list_price">定價</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>小計計算方式</label>
+          <select id="new-subtotal" onchange="syncPricingPresetFromAdvanced('new')">
+            <option value="quantity_times_purchase_price">數量 × 採購單價</option>
+            <option value="quantity_times_list_price">數量 × 定價</option>
+          </select>
+        </div>
+      </div>
+    </details>
     <div class="form-row">
       <div class="form-group">
         <label>專案預算（元）<span style="color:#888;font-size:12px;font-weight:400">（選填）</span></label>
         <input type="number" id="new-budget" placeholder="例：45000" min="0">
       </div>
+      <div class="form-group">
+        <label>年度 <span style="color:#888;font-size:12px;font-weight:400">（選填）</span></label>
+        <input type="text" id="new-academic-year" placeholder="例：115學年度">
+      </div>
+      <div class="form-group">
+        <label>經費來源 <span style="color:#888;font-size:12px;font-weight:400">（選填）</span></label>
+        <input type="text" id="new-funding-source" placeholder="例：家長會補助、校內自籌">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>採購規則備忘 <span style="color:#888;font-size:12px;font-weight:400">（選填，選書頁上方會顯示提醒）</span></label>
+      <textarea id="new-project-notes" rows="2" placeholder="例：繪本單價不超過 500 元、優先補充自然科學與本土語文類"></textarea>
     </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-primary" id="create-project-btn" onclick="createProject()">建立</button>
@@ -86,27 +166,60 @@
 
   <!-- Edit modal -->
   <div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:200;align-items:center;justify-content:center">
-    <div class="card" style="width:480px;margin:0">
+    <div class="card" style="width:540px;max-width:94vw;max-height:90vh;overflow-y:auto;margin:0">
       <h2>編輯專案設定</h2>
       <input type="hidden" id="edit-id">
       <div class="form-group"><label>專案名稱</label><input type="text" id="edit-name"></div>
-      <div class="form-group">
-        <label>專案預算（元）<span style="color:#888;font-size:12px;font-weight:400">（選填）</span></label>
-        <input type="number" id="edit-budget" min="0" placeholder="留空表示未設定">
+      <div class="form-row">
+        <div class="form-group">
+          <label>匯出範本</label>
+          <select id="edit-export-template"></select>
+        </div>
+        <div class="form-group">
+          <label>專案預算（元）<span style="color:#888;font-size:12px;font-weight:400">（選填）</span></label>
+          <input type="number" id="edit-budget" min="0" placeholder="留空表示未設定">
+        </div>
       </div>
       <div class="form-group">
-        <label>定價欄顯示</label>
-        <select id="edit-price-field">
-          <option value="purchase_price">採購單價</option>
-          <option value="list_price">定價</option>
+        <label>計價基準</label>
+        <select id="edit-pricing-preset" onchange="applyPricingPreset('edit')">
+          <option value="purchase">依實付單價（折後價）</option>
+          <option value="list">依書本定價</option>
+          <option value="custom">自訂進階設定</option>
         </select>
       </div>
+      <details id="edit-pricing-advanced" class="pricing-advanced">
+        <summary>進階計價設定（個別調整定價欄與小計公式）</summary>
+        <div class="form-row" style="margin-bottom:0">
+          <div class="form-group" style="margin-bottom:0">
+            <label>定價欄顯示</label>
+            <select id="edit-price-field" onchange="syncPricingPresetFromAdvanced('edit')">
+              <option value="purchase_price">採購單價</option>
+              <option value="list_price">定價</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>小計計算方式</label>
+            <select id="edit-subtotal" onchange="syncPricingPresetFromAdvanced('edit')">
+              <option value="quantity_times_purchase_price">數量 × 採購單價</option>
+              <option value="quantity_times_list_price">數量 × 定價</option>
+            </select>
+          </div>
+        </div>
+      </details>
+      <div class="form-row">
+        <div class="form-group">
+          <label>年度 <span style="color:#888;font-size:12px;font-weight:400">（選填）</span></label>
+          <input type="text" id="edit-academic-year" placeholder="留空表示不顯示">
+        </div>
+        <div class="form-group">
+          <label>經費來源 <span style="color:#888;font-size:12px;font-weight:400">（選填）</span></label>
+          <input type="text" id="edit-funding-source" placeholder="留空表示不顯示">
+        </div>
+      </div>
       <div class="form-group">
-        <label>小計計算方式</label>
-        <select id="edit-subtotal">
-          <option value="quantity_times_purchase_price">數量 × 採購單價</option>
-          <option value="quantity_times_list_price">數量 × 定價</option>
-        </select>
+        <label>採購規則備忘 <span style="color:#888;font-size:12px;font-weight:400">（選填）</span></label>
+        <textarea id="edit-project-notes" rows="2" placeholder="留空表示無備忘"></textarea>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" id="save-edit-btn" onclick="saveEdit()">儲存</button>
@@ -151,10 +264,96 @@
 <script src="/js/common.js"></script>
 <script>
 let projectsCache = [];
-requireAuth().then(loadProjects);
+let templatesCache = [];
+
+requireAuth().then(async () => {
+  await Promise.all([loadTemplates(), loadProjects()]);
+  onNewTypeChange();
+});
 
 function getCachedProject(id) {
   return projectsCache.find(p => p.id === id);
+}
+
+async function loadTemplates() {
+  try {
+    templatesCache = await api('/api/admin/templates');
+  } catch {
+    templatesCache = [];
+  }
+  populateTemplateSelect('new-export-template', document.getElementById('new-export-template').value);
+  populateTemplateSelect('edit-export-template', document.getElementById('edit-export-template').value);
+}
+
+function populateTemplateSelect(selectId, selectedValue) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const byType = {};
+  templatesCache.forEach(t => {
+    if (!byType[t.project_type]) byType[t.project_type] = t;
+  });
+  const orderedTypes = ['generic_builtin', 'local_culture', 'general_books', 'local_culture_jh', 'general_books_jh'];
+  sel.innerHTML = orderedTypes.map(type => {
+    let label = exportTemplateLabel(type);
+    if (type !== 'generic_builtin') {
+      const configured = byType[type];
+      if (configured && configured.name) {
+        label += `（已設定：${configured.name}）`;
+      } else if (configured) {
+        label += '（已設定）';
+      } else {
+        label += '（尚未上傳範本）';
+      }
+    }
+    return `<option value="${esc(type)}">${esc(label)}</option>`;
+  }).join('');
+  if (selectedValue && orderedTypes.includes(selectedValue)) {
+    sel.value = selectedValue;
+  }
+}
+
+function onNewTypeChange() {
+  const type = document.getElementById('new-type').value;
+  const hintEl = document.getElementById('new-type-rule-hint');
+  if (hintEl) hintEl.textContent = projectTypeRuleHint(type);
+  const tmplSel = document.getElementById('new-export-template');
+  if (tmplSel) {
+    const recommended = defaultExportTemplateForType(type);
+    if (Array.from(tmplSel.options).some(o => o.value === recommended)) {
+      tmplSel.value = recommended;
+    }
+  }
+}
+
+function detectPricingPreset(priceField, subtotalMode) {
+  if (priceField === 'purchase_price' && subtotalMode === 'quantity_times_purchase_price') return 'purchase';
+  if (priceField === 'list_price' && subtotalMode === 'quantity_times_list_price') return 'list';
+  return 'custom';
+}
+
+function applyPricingPreset(prefix) {
+  const preset = document.getElementById(`${prefix}-pricing-preset`).value;
+  const pfEl = document.getElementById(`${prefix}-price-field`);
+  const smEl = document.getElementById(`${prefix}-subtotal`);
+  const detailsEl = document.getElementById(`${prefix}-pricing-advanced`);
+  if (preset === 'purchase') {
+    pfEl.value = 'purchase_price';
+    smEl.value = 'quantity_times_purchase_price';
+  } else if (preset === 'list') {
+    pfEl.value = 'list_price';
+    smEl.value = 'quantity_times_list_price';
+  } else if (detailsEl) {
+    detailsEl.open = true;
+  }
+}
+
+function syncPricingPresetFromAdvanced(prefix) {
+  const pf = document.getElementById(`${prefix}-price-field`).value;
+  const sm = document.getElementById(`${prefix}-subtotal`).value;
+  const preset = detectPricingPreset(pf, sm);
+  document.getElementById(`${prefix}-pricing-preset`).value = preset;
+  const detailsEl = document.getElementById(`${prefix}-pricing-advanced`);
+  if (detailsEl && preset === 'custom') detailsEl.open = true;
 }
 
 async function loadProjects() {
@@ -167,13 +366,32 @@ async function loadProjects() {
     return;
   }
   projectsCache = projects;
-  if (!projects.length) {
+  renderProjects();
+}
+
+function renderProjects() {
+  const el = document.getElementById('project-list');
+  const archivedCount = projectsCache.filter(p => Boolean(p.is_archived)).length;
+  const archivedCountEl = document.getElementById('archived-count');
+  if (archivedCountEl) archivedCountEl.textContent = archivedCount;
+
+  const showArchived = Boolean(document.getElementById('show-archived-toggle')?.checked);
+  const visible = showArchived
+    ? projectsCache
+    : projectsCache.filter(p => !p.is_archived);
+
+  if (!projectsCache.length) {
     el.innerHTML = '<div class="empty"><div class="icon">📋</div><p>尚無採購專案</p></div>';
     return;
   }
+  if (!visible.length) {
+    el.innerHTML = '<div class="empty"><div class="icon">📦</div><p>目前沒有進行中的專案，可勾選上方「顯示已封存專案」檢視封存紀錄。</p></div>';
+    return;
+  }
   const cur = getProjectId();
-  el.innerHTML = projects.map(p => {
+  el.innerHTML = visible.map(p => {
     const isCurrent = cur == p.id;
+    const isArchived = Boolean(p.is_archived);
     const fmtDate = iso => new Date(iso).toLocaleDateString('zh-TW');
     const fmtNum = n => Math.round(n).toLocaleString('zh-TW');
     let importRow;
@@ -204,20 +422,36 @@ async function loadProjects() {
     const exportRow = p.last_export
       ? `上次匯出 ${fmtDate(p.last_export)}`
       : '尚未匯出';
+    const tags = [];
+    if (isCurrent) tags.push('<span class="badge badge-available">目前使用</span>');
+    if (isArchived) tags.push('<span class="badge badge-already_owned">已封存</span>');
+    if (p.academic_year) tags.push(`<span class="badge badge-year">${esc(p.academic_year)}</span>`);
+    if (p.funding_source) tags.push(`<span class="badge badge-funding">${esc(p.funding_source)}</span>`);
+    const tagsHtml = tags.length ? `<span class="project-tags">${tags.join('')}</span>` : '';
+    const notesText = (p.project_notes || '').trim();
+    const notesHtml = notesText
+      ? `<div class="project-notes-summary">備忘：${esc(notesText)}</div>`
+      : '';
+    const tmplType = p.export_template_type || defaultExportTemplateForType(p.project_type);
+    const archiveBtnLabel = isArchived ? '取消封存' : '封存';
     return `
-    <div class="project-card${isCurrent ? ' current' : ''}" onclick="selectCard(${p.id})">
+    <div class="project-card${isCurrent ? ' current' : ''}${isArchived ? ' archived' : ''}" onclick="selectCard(${p.id})">
       <div class="project-card-top">
         <div class="project-info">
-          <div class="project-name">${esc(p.name)}${isCurrent ? ' <span class="badge badge-available">目前使用</span>' : ''}</div>
+          <div class="project-name">${esc(p.name)}${tagsHtml}</div>
           <div class="project-meta">
             ${esc(projectTypeLabel(p.project_type))} ·
+            匯出範本：${esc(exportTemplateLabel(tmplType))} ·
             定價欄：${p.price_field === 'purchase_price' ? '採購單價' : '定價'} ·
             小計：${p.subtotal_mode === 'quantity_times_purchase_price' ? '數量×採購單價' : '數量×定價'}
           </div>
+          ${notesHtml}
         </div>
-        <div class="project-actions">
+        <div class="project-actions" style="flex-wrap:wrap;justify-content:flex-end">
           <button class="btn btn-primary btn-sm" onclick="selectProject(event,${p.id})">選擇</button>
           <button class="btn btn-secondary btn-sm" onclick="openEdit(event,${p.id})">設定</button>
+          <button class="btn btn-secondary btn-sm" onclick="duplicateProject(event,${p.id})">複製設定</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleArchive(event,${p.id},${!isArchived})">${archiveBtnLabel}</button>
           <button class="btn btn-danger-outline btn-sm" onclick="confirmDelete(event,${p.id})">刪除</button>
         </div>
       </div>
@@ -265,8 +499,68 @@ function selectProject(event, id) {
   enterProject(id);
 }
 
-function showNewForm() { document.getElementById('new-form').style.display = 'block'; }
+function resetNewForm() {
+  document.getElementById('new-name').value = '';
+  document.getElementById('new-type').value = 'local_culture';
+  document.getElementById('new-budget').value = '';
+  document.getElementById('new-academic-year').value = '';
+  document.getElementById('new-funding-source').value = '';
+  document.getElementById('new-project-notes').value = '';
+  document.getElementById('new-pricing-preset').value = 'purchase';
+  document.getElementById('new-price-field').value = 'purchase_price';
+  document.getElementById('new-subtotal').value = 'quantity_times_purchase_price';
+  document.getElementById('new-pricing-advanced').open = false;
+  onNewTypeChange();
+}
+
+function showNewForm() {
+  resetNewForm();
+  document.getElementById('new-form').style.display = 'block';
+  document.getElementById('new-name').focus();
+}
 function hideNewForm() { document.getElementById('new-form').style.display = 'none'; }
+
+function duplicateProject(event, id) {
+  event.stopPropagation();
+  const p = getCachedProject(id);
+  if (!p) return;
+  document.getElementById('new-form').style.display = 'block';
+  document.getElementById('new-name').value = `${p.name} (複製)`;
+  document.getElementById('new-type').value = p.project_type || 'local_culture';
+  onNewTypeChange();
+  const tmplType = p.export_template_type || defaultExportTemplateForType(p.project_type);
+  populateTemplateSelect('new-export-template', tmplType);
+  document.getElementById('new-budget').value = p.budget_amount != null ? p.budget_amount : '';
+  document.getElementById('new-academic-year').value = p.academic_year || '';
+  document.getElementById('new-funding-source').value = p.funding_source || '';
+  document.getElementById('new-project-notes').value = p.project_notes || '';
+  document.getElementById('new-price-field').value = p.price_field || 'purchase_price';
+  document.getElementById('new-subtotal').value = p.subtotal_mode || 'quantity_times_purchase_price';
+  const preset = detectPricingPreset(
+    document.getElementById('new-price-field').value,
+    document.getElementById('new-subtotal').value,
+  );
+  document.getElementById('new-pricing-preset').value = preset;
+  document.getElementById('new-pricing-advanced').open = preset === 'custom';
+  document.getElementById('new-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('new-name').focus();
+  showToast('已帶入原專案設定，可修改名稱與年度後建立');
+}
+
+async function toggleArchive(event, id, nextArchived) {
+  event.stopPropagation();
+  try {
+    await api(`/api/projects/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_archived: Boolean(nextArchived) }),
+    });
+    showToast(nextArchived ? '專案已封存' : '已取消封存');
+    await loadProjects();
+  } catch (e) {
+    showToast('操作失敗：' + e.message);
+  }
+}
 
 async function createProject() {
   const name = document.getElementById('new-name').value.trim();
@@ -283,12 +577,16 @@ async function createProject() {
       body: JSON.stringify({
         name,
         project_type: document.getElementById('new-type').value,
+        export_template_type: document.getElementById('new-export-template').value,
         budget_amount: budget,
         price_field: document.getElementById('new-price-field').value,
         subtotal_mode: document.getElementById('new-subtotal').value,
+        academic_year: document.getElementById('new-academic-year').value.trim() || null,
+        funding_source: document.getElementById('new-funding-source').value.trim() || null,
+        project_notes: document.getElementById('new-project-notes').value.trim() || null,
       })
     });
-    setProject(created.id, created.name);
+    setProject(created.id, created.name || name);
     hideNewForm();
     showToast('專案已建立，前往匯入書商書單...');
     window.location.href = '/import.html?tab=vendor';
@@ -304,9 +602,17 @@ function openEdit(event, id) {
   if (!p) return;
   document.getElementById('edit-id').value = p.id;
   document.getElementById('edit-name').value = p.name;
+  const tmplType = p.export_template_type || defaultExportTemplateForType(p.project_type);
+  populateTemplateSelect('edit-export-template', tmplType);
   document.getElementById('edit-budget').value = p.budget_amount != null ? p.budget_amount : '';
   document.getElementById('edit-price-field').value = p.price_field;
   document.getElementById('edit-subtotal').value = p.subtotal_mode;
+  const preset = detectPricingPreset(p.price_field, p.subtotal_mode);
+  document.getElementById('edit-pricing-preset').value = preset;
+  document.getElementById('edit-pricing-advanced').open = preset === 'custom';
+  document.getElementById('edit-academic-year').value = p.academic_year || '';
+  document.getElementById('edit-funding-source').value = p.funding_source || '';
+  document.getElementById('edit-project-notes').value = p.project_notes || '';
   document.getElementById('edit-modal').style.display = 'flex';
 }
 function closeEdit() { document.getElementById('edit-modal').style.display = 'none'; }
@@ -327,8 +633,12 @@ async function saveEdit() {
       body: JSON.stringify({
         name,
         budget_amount: budget,
+        export_template_type: document.getElementById('edit-export-template').value,
         price_field: document.getElementById('edit-price-field').value,
         subtotal_mode: document.getElementById('edit-subtotal').value,
+        academic_year: document.getElementById('edit-academic-year').value.trim() || null,
+        funding_source: document.getElementById('edit-funding-source').value.trim() || null,
+        project_notes: document.getElementById('edit-project-notes').value.trim() || null,
       })
     });
     if (getProjectId() == id) setProject(id, name);

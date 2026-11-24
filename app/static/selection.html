@@ -37,6 +37,8 @@
     </div>
   </div>
 
+  <div id="project-notes-banner" class="alert alert-info" style="display:none;margin-bottom:12px;white-space:pre-wrap"></div>
+
   <div class="budget-bar" id="budget-bar">
     <div class="budget-item">
       <div class="label">已選書目</div>
@@ -266,6 +268,16 @@ requireAuth().then(async () => {
   projectType = proj.project_type;
   projectBudget = proj.budget_amount != null ? Number(proj.budget_amount) : null;
   projectSubtotalMode = proj.subtotal_mode || 'quantity_times_purchase_price';
+  const notesBanner = document.getElementById('project-notes-banner');
+  if (notesBanner) {
+    const notesText = (proj.project_notes || '').trim();
+    if (notesText) {
+      notesBanner.innerHTML = `<strong>採購備忘：</strong>${esc(notesText)}`;
+      notesBanner.style.display = 'block';
+    } else {
+      notesBanner.style.display = 'none';
+    }
+  }
   if (isGeneralBooks(projectType)) {
     document.getElementById('field-purchase-category').style.display = '';
   }

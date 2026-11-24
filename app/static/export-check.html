@@ -228,11 +228,17 @@ function renderHint(d) {
   if (d.missing_required > 0) {
     btn.className = 'btn btn-primary';
     hint.textContent = `有 ${d.missing_required} 本書缺少必填欄位，匯出後對應欄位將留空`;
-    alertArea.innerHTML = `<div class="alert alert-warn">有 ${d.missing_required} 本書缺少必填欄位（ISBN無效/缺書名/缺定價），匯出後對應欄位將留空。可在下方表格直接修正欄位或移除書目。</div>`;
+    const reqFieldsDesc = projectType === 'custom'
+      ? '書名／價格／採購數量'
+      : 'ISBN無效/缺書名/缺定價';
+    alertArea.innerHTML = `<div class="alert alert-warn">有 ${d.missing_required} 本書缺少必填欄位（${reqFieldsDesc}），匯出後對應欄位將留空。可在下方表格直接修正欄位或移除書目。</div>`;
   } else if (d.needs_review > 0) {
     btn.className = 'btn btn-primary';
     hint.textContent = `有 ${d.needs_review} 本書缺少建議欄位，可繼續匯出`;
-    alertArea.innerHTML = `<div class="alert alert-warn">有 ${d.needs_review} 本書缺少建議欄位（作者/出版社/獲獎項目），仍可匯出。</div>`;
+    const reviewFieldsDesc = projectType === 'custom'
+      ? '作者／出版社／ISBN'
+      : '作者/出版社/獲獎項目';
+    alertArea.innerHTML = `<div class="alert alert-warn">有 ${d.needs_review} 本書缺少建議欄位（${reviewFieldsDesc}），仍可匯出。</div>`;
   } else {
     btn.className = 'btn btn-primary';
     hint.textContent = d.total_selected > 0 ? '所有書目均可匯出' : '尚無選書';
