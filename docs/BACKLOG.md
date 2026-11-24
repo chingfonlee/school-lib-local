@@ -77,6 +77,51 @@
 - decision:
   可做可不做，暫不排入 Active Tasks。
 
+### 階段 1：防重複買書全面升級
+
+- status: planning
+- priority: high
+- type: feat
+- task-id: task-duplicate-purchase-prevention
+- source: 使用者希望老師選書時能徹底避免買到館藏已有或其他專案已選購的重複書本
+- description:
+  將既有 `same_title_different_isbn` 警示呈現在選書頁與比對頁，並強化書名正規化（移除標點與常見版本字樣）、新增跨專案已選購／已匯出防重複提醒，以及顯示館藏複本數（已館藏幾冊）。
+- decision:
+  已進入 task-planning。
+
+### 階段 2：多書商書單累加、增量更新與跨書商比價
+
+- status: idea
+- priority: high
+- type: feat
+- source: 使用者希望老師拿到各家書商書單 `.xls/.xlsx` 後能不斷累積與更新書單資料庫
+- description:
+  支援為書商書單標記書商名稱（`vendor_name`），提供「新增／依 ISBN 增量更新（保留老師既有 `user_overrides`）」與「取代指定書商」模式；選書頁支援依書商篩選與跨書商同 ISBN 比價提示；上傳書單後依表頭相似度自動推薦既有 `import_profiles`。
+- decision:
+  排於階段 1 之後評估開立 task。
+
+### 階段 3：學校館藏增量匯入與已採購回流
+
+- status: idea
+- priority: medium
+- type: feat
+- source: 使用者希望學校藏書能隨新書入館持續更新，避免剛買完的書在下個計畫又重複採購
+- description:
+  館藏匯入支援「全校完整覆蓋」與「增量追加（依 ISBN + 登錄號去重）」雙模式；專案匯出完成後提供一鍵將已採購書目記入待入館／館藏清單；補強 HTML 偽裝 `.xls`、貨幣格式（`NT$`/`元`）與無 ISBN 書目的書名＋作者弱比對提示。
+- decision:
+  排於階段 2 之後評估開立 task。
+
+### 階段 4：全校共用長期書商書單池（跨專案共享）
+
+- status: idea
+- priority: low
+- type: feat
+- source: 避免跨年度或跨補助案重複整理同一批書商推薦總目
+- description:
+  評估將書商書單從單一專案解耦為全校共用的長期書單資料庫，讓不同年度與補助案可直接從共享書單池篩選並加入選書。
+- decision:
+  選配，待階段 1～3 實際使用回饋後再決定是否啟動。
+
 ## 查詢提示詞範例
 
 ```text
