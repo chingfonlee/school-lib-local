@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from app.database import get_connection
+from app.database import db_session, get_connection
 from app.services.isbn_service import normalize_isbn, get_isbn_status
 from app.services.completeness_service import compute as compute_completeness
 from app.services.match_service import run_match
@@ -67,11 +67,13 @@ def _list_excel_sheets(file_bytes: bytes, engine: str) -> list[str]:
     """Return sheet names from an xls/xlsx workbook."""
     if engine == "openpyxl":
         from openpyxl import load_workbook
+
         wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
         sheets = list(wb.sheetnames)
         wb.close()
     else:
         import xlrd
+
         wb = xlrd.open_workbook(file_contents=file_bytes)
         sheets = wb.sheet_names()
     return sheets
@@ -87,11 +89,7 @@ def _detect_header_row(file_bytes: bytes, engine: str, hints: dict, sheet_name=0
         nrows=20,
         dtype=str,
     )
-    hint_tokens = {
-        str(token).strip().lower()
-        for candidates in hints.values()
-        for token in candidates
-    }
+    hint_tokens = {str(token).strip().lower() for candidates in hints.values() for token in candidates}
     best_row = 0
     best_score = -1
     for idx, row in preview.iterrows():
@@ -141,20 +139,20 @@ def preview_excel(
 
     if engine == "openpyxl":
         from openpyxl import load_workbook
+
         wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
         sheets = list(wb.sheetnames)
         wb.close()
     else:
         import xlrd
+
         wb = xlrd.open_workbook(file_contents=file_bytes)
         sheets = wb.sheet_names()
 
     active_sheet = sheet_name if sheet_name else (sheets[0] if sheets else 0)
 
     if header_row is None:
-        guessed_header_row = _detect_header_row(
-            file_bytes, engine, VENDOR_COLUMN_HINTS, sheet_name=active_sheet
-        )
+        guessed_header_row = _detect_header_row(file_bytes, engine, VENDOR_COLUMN_HINTS, sheet_name=active_sheet)
     else:
         guessed_header_row = header_row
 
@@ -223,112 +221,112 @@ def confirm_import(
     )
     df.columns = [str(c).strip() for c in df.columns]
 
-    conn = get_connection()
-    proj_row = conn.execute(
-        "SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)
-    ).fetchone()
-    proj_type = proj_row["project_type"] if proj_row else None
-    _clear_vendor_books_for_project(conn, project_id)
-    batch_row = conn.execute(
-        "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
-        "imported_by, imported_at) VALUES (?, 'vendor_books', ?, ?, ?, ?)",
-        (project_id, filename, profile_id, user_id, now),
-    )
-    batch_id = batch_row.lastrowid
+    with db_session(get_connection) as conn:
+        proj_row = conn.execute("SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)).fetchone()
+        proj_type = proj_row["project_type"] if proj_row else None
+        _clear_vendor_books_for_project(conn, project_id)
+        batch_row = conn.execute(
+            "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
+            "imported_by, imported_at) VALUES (?, 'vendor_books', ?, ?, ?, ?)",
+            (project_id, filename, profile_id, user_id, now),
+        )
+        batch_id = batch_row.lastrowid
 
-    records_inserted = 0
-    skipped_count = 0
+        records_inserted = 0
+        skipped_count = 0
 
-    for enum_idx, (_, row) in enumerate(df.iterrows()):
-        raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
-        source_row_number = header_row + 2 + enum_idx  # 1-based Excel row
+        for enum_idx, (_, row) in enumerate(df.iterrows()):
+            raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
+            source_row_number = header_row + 2 + enum_idx  # 1-based Excel row
 
-        def get_field(sys_field: str):
-            src_col = mappings.get(sys_field)
-            if src_col:
-                v = raw.get(src_col)
-                return v if v else None
-            return None
+            def get_field(sys_field: str):
+                src_col = mappings.get(sys_field)
+                if src_col:
+                    v = raw.get(src_col)
+                    return v if v else None
+                return None
 
-        isbn_raw = get_field("isbn")
-        title = get_field("title")
-        if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
-            skipped_count += 1
-            continue
+            isbn_raw = get_field("isbn")
+            title = get_field("title")
+            if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
+                skipped_count += 1
+                continue
 
-        isbn_norm = normalize_isbn(isbn_raw)
-        isbn_status = get_isbn_status(isbn_raw)
+            isbn_norm = normalize_isbn(isbn_raw)
+            isbn_status = get_isbn_status(isbn_raw)
 
-        extra_fields = {}
-        for col_name in (extra_field_settings or []):
-            val = raw.get(col_name)
-            if val:
-                extra_fields[col_name] = val
+            extra_fields = {}
+            for col_name in extra_field_settings or []:
+                val = raw.get(col_name)
+                if val:
+                    extra_fields[col_name] = val
 
-        list_price = _to_float(get_field("list_price"))
-        purchase_price = _to_float(get_field("purchase_price"))
-        if purchase_price is None and list_price is not None:
-            formula = pp_formula_map.get(enum_idx)
-            if formula:
-                purchase_price = _resolve_formula_purchase_price(formula, list_price)
+            list_price = _to_float(get_field("list_price"))
+            purchase_price = _to_float(get_field("purchase_price"))
+            if purchase_price is None and list_price is not None:
+                formula = pp_formula_map.get(enum_idx)
+                if formula:
+                    purchase_price = _resolve_formula_purchase_price(formula, list_price)
 
-        book = {
-            "title": title,
-            "list_price": list_price,
-            "purchase_price": purchase_price,
-            "author": get_field("author"),
-            "publisher": get_field("publisher"),
-            "award_item": get_field("award_item"),
-            "eligibility_label": get_field("eligibility_label"),
-            "recommendation_source": get_field("recommendation_source"),
-        }
-        completeness = compute_completeness(book, project_type=proj_type)
+            book = {
+                "title": title,
+                "list_price": list_price,
+                "purchase_price": purchase_price,
+                "author": get_field("author"),
+                "publisher": get_field("publisher"),
+                "award_item": get_field("award_item"),
+                "eligibility_label": get_field("eligibility_label"),
+                "recommendation_source": get_field("recommendation_source"),
+            }
+            completeness = compute_completeness(book, project_type=proj_type)
+
+            conn.execute(
+                "INSERT INTO vendor_books"
+                "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
+                "publish_date, list_price, purchase_price, publisher, age_range, "
+                "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
+                "category, book_type, policy_topic, summary, source_url, recommendation_source, "
+                "eligibility_label, classification_number, award_notes) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    batch_id,
+                    book["award_item"],
+                    get_field("vendor_seq"),
+                    book["title"],
+                    book["author"],
+                    isbn_raw,
+                    isbn_norm,
+                    get_field("publish_date"),
+                    book["list_price"],
+                    book["purchase_price"],
+                    book["publisher"],
+                    get_field("age_range"),
+                    isbn_status,
+                    completeness,
+                    json.dumps(extra_fields, ensure_ascii=False) if extra_fields else None,
+                    source_row_number,
+                    json.dumps(raw, ensure_ascii=False),
+                    get_field("category"),
+                    get_field("book_type"),
+                    get_field("policy_topic"),
+                    get_field("summary"),
+                    get_field("source_url"),
+                    get_field("recommendation_source"),
+                    get_field("eligibility_label"),
+                    get_field("classification_number"),
+                    get_field("award_notes"),
+                ),
+            )
+            records_inserted += 1
+
+        if records_inserted == 0:
+            raise ValueError("未解析到任何有效書目資料，已保留原有書單")
 
         conn.execute(
-            "INSERT INTO vendor_books"
-            "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
-            "publish_date, list_price, purchase_price, publisher, age_range, "
-            "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
-            "category, book_type, policy_topic, summary, source_url, recommendation_source, "
-            "eligibility_label, classification_number, award_notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                batch_id,
-                book["award_item"],
-                get_field("vendor_seq"),
-                book["title"],
-                book["author"],
-                isbn_raw,
-                isbn_norm,
-                get_field("publish_date"),
-                book["list_price"],
-                book["purchase_price"],
-                book["publisher"],
-                get_field("age_range"),
-                isbn_status,
-                completeness,
-                json.dumps(extra_fields, ensure_ascii=False) if extra_fields else None,
-                source_row_number,
-                json.dumps(raw, ensure_ascii=False),
-                get_field("category"),
-                get_field("book_type"),
-                get_field("policy_topic"),
-                get_field("summary"),
-                get_field("source_url"),
-                get_field("recommendation_source"),
-                get_field("eligibility_label"),
-                get_field("classification_number"),
-                get_field("award_notes"),
-            ),
+            "UPDATE import_batches SET record_count = ? WHERE id = ?",
+            (records_inserted, batch_id),
         )
-        records_inserted += 1
-
-    conn.execute(
-        "UPDATE import_batches SET record_count = ? WHERE id = ?",
-        (records_inserted, batch_id),
-    )
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     result = {
         "batch_id": batch_id,
@@ -439,11 +437,6 @@ def import_vendor_books(
 ) -> dict:
     """Legacy single-step import with auto-detected column mapping."""
     now = datetime.now(timezone.utc).isoformat()
-    conn = get_connection()
-    proj_row = conn.execute(
-        "SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)
-    ).fetchone()
-    proj_type = proj_row["project_type"] if proj_row else None
 
     df = _read_excel_with_detected_header(file_bytes, "openpyxl", VENDOR_COLUMN_HINTS)
     df.columns = [str(c).strip() for c in df.columns]
@@ -451,106 +444,111 @@ def import_vendor_books(
     if column_overrides:
         mapping.update(column_overrides)
 
-    _clear_vendor_books_for_project(conn, project_id)
-    batch_row = conn.execute(
-        "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
-        "imported_by, imported_at) VALUES (?, 'vendor_books', ?, ?, ?, ?)",
-        (project_id, filename, profile_id, user_id, now),
-    )
-    batch_id = batch_row.lastrowid
-
-    records_inserted = 0
     reverse_map = {v: k for k, v in mapping.items()}
-
     pp_formula_map: dict = {}
     pp_src_col = reverse_map.get("purchase_price")
     if pp_src_col:
         _vb_header_row = _detect_header_row(file_bytes, "openpyxl", VENDOR_COLUMN_HINTS)
         pp_formula_map = _build_formula_fallback(file_bytes, 0, _vb_header_row, pp_src_col)
 
-    for enum_idx, (_, row) in enumerate(df.iterrows()):
-        raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
+    with db_session(get_connection) as conn:
+        proj_row = conn.execute("SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)).fetchone()
+        proj_type = proj_row["project_type"] if proj_row else None
 
-        def get_field(field: str):
-            src = reverse_map.get(field)
-            if src:
-                v = raw.get(src)
-                return v if v else None
-            return None
+        _clear_vendor_books_for_project(conn, project_id)
+        batch_row = conn.execute(
+            "INSERT INTO import_batches(project_id, batch_type, original_filename, profile_id, "
+            "imported_by, imported_at) VALUES (?, 'vendor_books', ?, ?, ?, ?)",
+            (project_id, filename, profile_id, user_id, now),
+        )
+        batch_id = batch_row.lastrowid
 
-        isbn_raw = get_field("isbn")
-        title = get_field("title")
-        if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
-            continue
-        isbn_norm = normalize_isbn(isbn_raw)
-        isbn_status = get_isbn_status(isbn_raw)
+        records_inserted = 0
+        for enum_idx, (_, row) in enumerate(df.iterrows()):
+            raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
 
-        award_item = get_field("award_item")
+            def get_field(field: str):
+                src = reverse_map.get(field)
+                if src:
+                    v = raw.get(src)
+                    return v if v else None
+                return None
 
-        list_price = _to_float(get_field("list_price"))
-        purchase_price = _to_float(get_field("purchase_price"))
-        if purchase_price is None and list_price is not None:
-            formula = pp_formula_map.get(enum_idx)
-            if formula:
-                purchase_price = _resolve_formula_purchase_price(formula, list_price)
+            isbn_raw = get_field("isbn")
+            title = get_field("title")
+            if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
+                continue
+            isbn_norm = normalize_isbn(isbn_raw)
+            isbn_status = get_isbn_status(isbn_raw)
 
-        book = {
-            "title": title,
-            "list_price": list_price,
-            "purchase_price": purchase_price,
-            "author": get_field("author"),
-            "publisher": get_field("publisher"),
-            "award_item": award_item,
-            "eligibility_label": get_field("eligibility_label"),
-            "recommendation_source": get_field("recommendation_source"),
-        }
-        completeness = compute_completeness(book, project_type=proj_type)
+            award_item = get_field("award_item")
+
+            list_price = _to_float(get_field("list_price"))
+            purchase_price = _to_float(get_field("purchase_price"))
+            if purchase_price is None and list_price is not None:
+                formula = pp_formula_map.get(enum_idx)
+                if formula:
+                    purchase_price = _resolve_formula_purchase_price(formula, list_price)
+
+            book = {
+                "title": title,
+                "list_price": list_price,
+                "purchase_price": purchase_price,
+                "author": get_field("author"),
+                "publisher": get_field("publisher"),
+                "award_item": award_item,
+                "eligibility_label": get_field("eligibility_label"),
+                "recommendation_source": get_field("recommendation_source"),
+            }
+            completeness = compute_completeness(book, project_type=proj_type)
+
+            conn.execute(
+                "INSERT INTO vendor_books"
+                "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
+                "publish_date, list_price, purchase_price, publisher, age_range, "
+                "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
+                "category, book_type, policy_topic, summary, source_url, recommendation_source, "
+                "eligibility_label, classification_number, award_notes) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    batch_id,
+                    award_item,
+                    get_field("vendor_seq"),
+                    book["title"],
+                    book["author"],
+                    isbn_raw,
+                    isbn_norm,
+                    get_field("publish_date"),
+                    book["list_price"],
+                    book["purchase_price"],
+                    book["publisher"],
+                    get_field("age_range"),
+                    isbn_status,
+                    completeness,
+                    None,
+                    None,
+                    json.dumps(raw, ensure_ascii=False),
+                    get_field("category"),
+                    get_field("book_type"),
+                    get_field("policy_topic"),
+                    get_field("summary"),
+                    get_field("source_url"),
+                    get_field("recommendation_source"),
+                    get_field("eligibility_label"),
+                    get_field("classification_number"),
+                    get_field("award_notes"),
+                ),
+            )
+            records_inserted += 1
+
+        if records_inserted == 0:
+            raise ValueError("未解析到任何有效書目資料，已保留原有書單")
 
         conn.execute(
-            "INSERT INTO vendor_books"
-            "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
-            "publish_date, list_price, purchase_price, publisher, age_range, "
-            "isbn_status, completeness_status, extra_fields, source_row_number, raw_row, "
-            "category, book_type, policy_topic, summary, source_url, recommendation_source, "
-            "eligibility_label, classification_number, award_notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                batch_id,
-                award_item,
-                get_field("vendor_seq"),
-                book["title"],
-                book["author"],
-                isbn_raw,
-                isbn_norm,
-                get_field("publish_date"),
-                book["list_price"],
-                book["purchase_price"],
-                book["publisher"],
-                get_field("age_range"),
-                isbn_status,
-                completeness,
-                None,
-                None,
-                json.dumps(raw, ensure_ascii=False),
-                get_field("category"),
-                get_field("book_type"),
-                get_field("policy_topic"),
-                get_field("summary"),
-                get_field("source_url"),
-                get_field("recommendation_source"),
-                get_field("eligibility_label"),
-                get_field("classification_number"),
-                get_field("award_notes"),
-            ),
+            "UPDATE import_batches SET record_count = ? WHERE id = ?",
+            (records_inserted, batch_id),
         )
-        records_inserted += 1
-
-    conn.execute(
-        "UPDATE import_batches SET record_count = ? WHERE id = ?",
-        (records_inserted, batch_id),
-    )
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     result = {
         "batch_id": batch_id,
@@ -569,14 +567,15 @@ def _to_float(v) -> float | None:
     if v is None:
         return None
     try:
-        return float(str(v).replace(",", ""))
+        val = float(str(v).replace(",", ""))
+        return val if math.isfinite(val) else None
     except (ValueError, TypeError):
         return None
 
 
 def _parse_formula_multiplier(formula: str) -> float | None:
     """Extract multiplier from patterns like *75% → 0.75."""
-    m = re.search(r'\*\s*(\d+(?:\.\d+)?)\s*%', formula)
+    m = re.search(r"\*\s*(\d+(?:\.\d+)?)\s*%", formula)
     if m:
         return float(m.group(1)) / 100
     return None
@@ -592,14 +591,12 @@ def _resolve_formula_purchase_price(formula: str, list_price: float | None) -> f
     multiplier = _parse_formula_multiplier(formula)
     if multiplier is None:
         return None
-    if re.search(r'ROUND\s*\(', formula, re.IGNORECASE):
+    if re.search(r"ROUND\s*\(", formula, re.IGNORECASE):
         return float(math.floor(list_price * multiplier + 0.5))
     return list_price * multiplier
 
 
-def _build_formula_fallback(
-    file_bytes: bytes, sheet, header_row: int, pp_src_col: str
-) -> dict:
+def _build_formula_fallback(file_bytes: bytes, sheet, header_row: int, pp_src_col: str) -> dict:
     """
     Return {data_row_0based: formula_string} for the purchase_price column.
     data_row_0based=0 is the first data row (DataFrame index 0).
@@ -608,6 +605,7 @@ def _build_formula_fallback(
     """
     try:
         from openpyxl import load_workbook
+
         wb = load_workbook(io.BytesIO(file_bytes), data_only=False, read_only=True)
         ws = wb[sheet] if isinstance(sheet, str) else list(wb.worksheets)[int(sheet) if sheet else 0]
 
@@ -631,7 +629,7 @@ def _build_formula_fallback(
         for row in ws.iter_rows(min_row=excel_data_start, min_col=pp_col_idx, max_col=pp_col_idx):
             for cell in row:
                 val = cell.value
-                if val and isinstance(val, str) and val.startswith('='):
+                if val and isinstance(val, str) and val.startswith("="):
                     formula_map[cell.row - excel_data_start] = val
 
         wb.close()
@@ -649,10 +647,7 @@ def _clear_library_holdings(conn) -> None:
     conn.execute("DELETE FROM book_matches WHERE holding_id IS NOT NULL")
     conn.execute("DELETE FROM library_holdings")
     batch_ids = [
-        r[0]
-        for r in conn.execute(
-            "SELECT id FROM import_batches WHERE batch_type='library_holdings'"
-        ).fetchall()
+        r[0] for r in conn.execute("SELECT id FROM import_batches WHERE batch_type='library_holdings'").fetchall()
     ]
     if batch_ids:
         ph = ",".join("?" * len(batch_ids))
@@ -679,8 +674,7 @@ def _clear_vendor_books_for_project(conn, project_id: int) -> None:
     ph = ",".join("?" * len(old_batch_ids))
 
     conn.execute(
-        f"DELETE FROM book_matches WHERE vendor_book_id IN "
-        f"(SELECT id FROM vendor_books WHERE batch_id IN ({ph}))",
+        f"DELETE FROM book_matches WHERE vendor_book_id IN (SELECT id FROM vendor_books WHERE batch_id IN ({ph}))",
         old_batch_ids,
     )
     conn.execute(
@@ -697,9 +691,7 @@ def clear_library_holdings(user_id: int) -> dict:
     conn = get_connection()
     try:
         holdings_count = conn.execute("SELECT COUNT(*) FROM library_holdings").fetchone()[0]
-        matches_count = conn.execute(
-            "SELECT COUNT(*) FROM book_matches WHERE holding_id IS NOT NULL"
-        ).fetchone()[0]
+        matches_count = conn.execute("SELECT COUNT(*) FROM book_matches WHERE holding_id IS NOT NULL").fetchone()[0]
         batches_count = conn.execute(
             "SELECT COUNT(*) FROM import_batches WHERE batch_type='library_holdings'"
         ).fetchone()[0]
@@ -720,9 +712,7 @@ def clear_library_holdings(user_id: int) -> dict:
 def clear_vendor_books(project_id: int, user_id: int) -> dict:
     conn = get_connection()
     try:
-        project = conn.execute(
-            "SELECT id FROM procurement_projects WHERE id=?", (project_id,)
-        ).fetchone()
+        project = conn.execute("SELECT id FROM procurement_projects WHERE id=?", (project_id,)).fetchone()
         if project is None:
             raise ValueError(f"project_id {project_id} 不存在")
 
@@ -770,16 +760,12 @@ def clear_vendor_books(project_id: int, user_id: int) -> dict:
     }
 
 
-def _read_library_sheet(
-    file_bytes: bytes, engine: str, sheet_name
-) -> tuple | None:
+def _read_library_sheet(file_bytes: bytes, engine: str, sheet_name) -> tuple | None:
     """
     Detect header and match columns for one sheet.
     Returns (df, mapping, unmapped) if the sheet has isbn or title mapping, else None.
     """
-    df = _read_excel_with_detected_header(
-        file_bytes, engine, LIBRARY_COLUMN_HINTS, sheet_name=sheet_name
-    )
+    df = _read_excel_with_detected_header(file_bytes, engine, LIBRARY_COLUMN_HINTS, sheet_name=sheet_name)
     df.columns = [str(c).strip() for c in df.columns]
     mapping, unmapped = _match_columns(list(df.columns), LIBRARY_COLUMN_HINTS)
     if "isbn" not in mapping.values() and "title" not in mapping.values():
