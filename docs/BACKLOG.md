@@ -130,7 +130,7 @@
 
 ### 選書減負與師生推薦匯整
 
-- status: planning
+- status: done
 - priority: high
 - type: feat
 - task-id: task-selection-ux-and-project-merge
@@ -142,7 +142,7 @@
   4. 置頂視覺預算進度條與年段／分類分佈小統計：於置頂 `budget-bar` 顯示預算達成率進度條（`< 90%` 藍、`90%–100%` 綠、`> 100%` 紅）與剩餘／超支金額，並提供可展開的已選書目適讀年齡與分類分佈即時統計。
   5. 多專案選書匯整（從其他專案匯入選書）：新增後端 API 與前端匯入彈窗，可勾選其他專案將其已選書目以數量 1 匯入目標專案，自動依 `vendor_book_id`／`isbn_normalized` 去重，並預設自動略過已館藏書目（`already_owned`）。
 - decision:
-  已進入 task-planning。
+  已完成並合併至 main。
 
 ## 查詢提示詞範例
 
