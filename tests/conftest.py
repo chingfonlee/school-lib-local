@@ -8,6 +8,7 @@ from app.auth import require_auth
 
 class _NoCloseConn:
     """sqlite3 connection wrapper that ignores close() so the fixture holds the conn alive."""
+
     def __init__(self, conn):
         self._conn = conn
 
@@ -29,6 +30,10 @@ _TEST_SCHEMA = [
         export_template_type TEXT NOT NULL DEFAULT 'local_culture',
         price_field TEXT NOT NULL DEFAULT 'purchase_price',
         subtotal_mode TEXT NOT NULL DEFAULT 'quantity_times_purchase_price',
+        academic_year TEXT,
+        funding_source TEXT,
+        project_notes TEXT,
+        is_archived INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT '',
         updated_at TEXT NOT NULL DEFAULT ''
     )""",
@@ -106,12 +111,8 @@ def project_db(monkeypatch):
     real_conn.execute("PRAGMA foreign_keys = ON")
     for stmt in _TEST_SCHEMA:
         real_conn.execute(stmt)
-    real_conn.execute(
-        "INSERT INTO procurement_projects(name, project_type) VALUES ('測試專案', 'local_culture')"
-    )
-    real_conn.execute(
-        "INSERT INTO procurement_projects(name, project_type) VALUES ('另一專案', 'local_culture')"
-    )
+    real_conn.execute("INSERT INTO procurement_projects(name, project_type) VALUES ('測試專案', 'local_culture')")
+    real_conn.execute("INSERT INTO procurement_projects(name, project_type) VALUES ('另一專案', 'local_culture')")
     real_conn.commit()
 
     wrapped = _NoCloseConn(real_conn)
