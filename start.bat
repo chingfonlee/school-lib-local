@@ -48,8 +48,28 @@ if not exist .venv\ (
 )
 
 call .venv\Scripts\activate.bat
-echo 安裝或更新依賴套件，請稍候...
-pip install -r requirements.txt --quiet
+
+set "NEED_INSTALL=0"
+set "REQ_HASH="
+set "SAVED_HASH="
+for /f "delims=" %%h in ('python -c "import hashlib,pathlib;print(hashlib.sha256(pathlib.Path('requirements.txt').read_bytes()).hexdigest())"') do set "REQ_HASH=%%h"
+if exist .venv\.req_hash (
+    set /p SAVED_HASH=<.venv\.req_hash
+)
+if not "%REQ_HASH%"=="%SAVED_HASH%" set "NEED_INSTALL=1"
+python -c "import uvicorn" >nul 2>&1
+if %errorlevel% neq 0 set "NEED_INSTALL=1"
+
+if "%NEED_INSTALL%"=="1" (
+    echo 安裝或更新依賴套件，請稍候...
+    pip install -r requirements.txt --quiet
+    if %errorlevel% neq 0 (
+        echo [錯誤] 依賴套件安裝失敗，請檢查網路連線或 requirements.txt。
+        pause
+        exit /b 1
+    )
+    python -c "import pathlib; pathlib.Path('.venv/.req_hash').write_text('%REQ_HASH%', encoding='utf-8')"
+)
 
 python setup_first_run.py
 if %errorlevel% neq 0 (
@@ -59,7 +79,10 @@ if %errorlevel% neq 0 (
 )
 
 echo 啟動伺服器，請稍候...
-start "" /b powershell -NoProfile -ExecutionPolicy Bypass -Command "$url='http://127.0.0.1:8765'; for ($i=0; $i -lt 60; $i++) { try { Invoke-WebRequest -UseBasicParsing -Uri ($url + '/api/health') -TimeoutSec 1 | Out-Null; Start-Process $url; exit 0 } catch { Start-Sleep -Seconds 1 } }; Start-Process $url"
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
+python run_server.py
+if %errorlevel% neq 0 (
+    pause
+    exit /b 1
+)
 
 pause

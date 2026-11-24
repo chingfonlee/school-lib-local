@@ -7,12 +7,24 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import database as db
-from app.config import get_config
+from app.config import BASE_DIR, get_config
 from app.logging_config import get_logger, setup_logging
 from app.routers import admin, auth, backup, books, exports, holdings, imports, projects, selections
 
 setup_logging()
 logger = get_logger("main")
+
+DEFAULT_SESSION_SECRET_PLACEHOLDER = "<generate-a-random-secret>"
+SESSION_MAX_AGE_SECONDS = 8 * 3600
+
+
+def _validate_session_secret(secret: str | None) -> str:
+    if not secret or not secret.strip() or secret.strip() == DEFAULT_SESSION_SECRET_PLACEHOLDER:
+        raise RuntimeError(
+            "config.yaml 的 auth.session_secret_key 尚未設定或仍為預設佔位符，"
+            "請先執行 setup_first_run.py 或手動填入隨機密鑰後再啟動。"
+        )
+    return secret
 
 
 @asynccontextmanager
@@ -29,7 +41,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="School Library Procurement", lifespan=lifespan)
 
 cfg = get_config()
-app.add_middleware(SessionMiddleware, secret_key=cfg.session_secret_key)
+session_secret = _validate_session_secret(cfg.session_secret_key)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=session_secret,
+    max_age=SESSION_MAX_AGE_SECONDS,
+    same_site="lax",
+)
 
 
 @app.exception_handler(Exception)
@@ -63,4 +81,4 @@ async def root_redirect():
     return RedirectResponse(url="/projects.html", status_code=302)
 
 
-app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
+app.mount("/", StaticFiles(directory=str(BASE_DIR / "app" / "static"), html=True), name="static")

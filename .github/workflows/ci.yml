@@ -30,16 +30,18 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Create config from example
-        run: cp config.example.yaml config.yaml
+        run: |
+          cp config.example.yaml config.yaml
+          python -c "import pathlib, secrets; from setup_first_run import apply_setup_values; apply_setup_values(pathlib.Path('config.yaml'), password='ci-test-password', secret_key=secrets.token_hex(32))"
 
       - name: Syntax check
-        run: python -m compileall -q app
+        run: python -m compileall -q app run_server.py setup_first_run.py
 
       - name: Lint check
-        run: python -m ruff check app tests
+        run: python -m ruff check app tests run_server.py setup_first_run.py
 
       - name: Type check
-        run: python -m mypy app/logging_config.py app/database.py app/main.py app/routers/backup.py app/routers/projects.py app/services/isbn_service.py app/services/completeness_service.py app/services/match_service.py app/services/validation_service.py
+        run: python -m mypy app/logging_config.py app/database.py app/main.py app/config.py app/auth.py app/routers/backup.py app/routers/projects.py app/services/isbn_service.py app/services/completeness_service.py app/services/match_service.py app/services/validation_service.py run_server.py
 
       - name: Run tests
         run: python -m pytest -q
