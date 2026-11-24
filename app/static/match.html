@@ -40,7 +40,7 @@
       <option value="">全部書商</option>
     </select>
     <label>比對狀態：</label>
-    <select id="filter-match" onchange="loadBooks()">
+    <select id="filter-match" onchange="onFilterChange()">
       <option value="">全部</option>
       <option value="available">可採購</option>
       <option value="already_owned">已館藏</option>
@@ -50,7 +50,7 @@
       <option value="invalid_isbn">無效 ISBN（含弱比對）</option>
     </select>
     <label>完整度：</label>
-    <select id="filter-comp" onchange="loadBooks()">
+    <select id="filter-comp" onchange="onFilterChange()">
       <option value="">全部</option>
       <option value="export_ready">可匯出</option>
       <option value="needs_review">需補資料</option>
@@ -72,11 +72,20 @@
       </table>
     </div>
   </div>
+
+  <div id="pagination" style="display:none;margin-top:16px;justify-content:center;align-items:center;gap:8px">
+    <button class="btn btn-secondary btn-sm" id="page-prev" onclick="goPage(-1)">上一頁</button>
+    <span id="page-info" style="font-size:13px;color:#666"></span>
+    <button class="btn btn-secondary btn-sm" id="page-next" onclick="goPage(1)">下一頁</button>
+  </div>
 </div>
 <div id="toast"></div>
 <script src="/js/common.js"></script>
 <script>
+const PAGE_SIZE = 100;
 let pid = null;
+let currentPage = 1;
+let totalPages = 0;
 
 requireAuth().then(async () => {
   pid = requireProject();
@@ -92,8 +101,7 @@ requireAuth().then(async () => {
   }
   document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
   await loadVendors();
-  await loadStats();
-  await loadBooks();
+  await Promise.all([loadStats(), loadBooks()]);
 });
 
 async function loadVendors() {
@@ -110,8 +118,32 @@ async function loadVendors() {
 }
 
 async function onVendorFilterChange() {
-  await loadStats();
-  await loadBooks();
+  currentPage = 1;
+  await Promise.all([loadStats(), loadBooks()]);
+}
+
+function onFilterChange() {
+  currentPage = 1;
+  loadBooks();
+}
+
+function updatePagination(total) {
+  const bar = document.getElementById('pagination');
+  if (!total || totalPages <= 0) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  document.getElementById('page-info').textContent = `第 ${currentPage} / ${totalPages} 頁，共 ${total} 筆`;
+  document.getElementById('page-prev').disabled = currentPage <= 1;
+  document.getElementById('page-next').disabled = currentPage >= totalPages;
+}
+
+function goPage(delta) {
+  const next = currentPage + delta;
+  if (next < 1 || next > totalPages) return;
+  currentPage = next;
+  loadBooks();
 }
 
 async function loadStats() {
@@ -175,18 +207,24 @@ async function loadBooks() {
   const vn = document.getElementById('filter-vendor').value;
   const ms = document.getElementById('filter-match').value;
   const cs = document.getElementById('filter-comp').value;
-  let url = `/api/books/matches?project_id=${pid}`;
+  let url = `/api/books/matches?project_id=${pid}&page=${currentPage}&page_size=${PAGE_SIZE}&include_offers=false`;
   if (vn) url += `&vendor_name=${encodeURIComponent(vn)}`;
   if (ms) url += `&match_status=${encodeURIComponent(ms)}`;
   if (cs) url += `&completeness_status=${encodeURIComponent(cs)}`;
-  let books;
+  let data;
   try {
-    books = await api(url);
+    data = await api(url);
   } catch (e) {
+    totalPages = 0;
+    updatePagination(0);
     tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#c0392b;padding:40px">載入失敗：${esc(e.message)}</td></tr>`;
     return;
   }
-  document.getElementById('result-count').textContent = `共 ${books.length} 筆`;
+  const books = Array.isArray(data) ? data : (data.items || []);
+  const total = Array.isArray(data) ? books.length : (Number(data.total) || 0);
+  totalPages = Array.isArray(data) ? (total > 0 ? 1 : 0) : (Number(data.total_pages) || 0);
+  document.getElementById('result-count').textContent = `共 ${total} 筆`;
+  updatePagination(total);
   if (!books.length) {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;padding:40px">無資料</td></tr>';
     return;
@@ -225,8 +263,8 @@ async function runMatch(btn) {
       body: JSON.stringify({ project_id: pid })
     });
     showToast(`比對完成：可採購 ${stats.available||0} 本、已館藏 ${stats.already_owned||0} 本`);
-    await loadStats();
-    await loadBooks();
+    currentPage = 1;
+    await Promise.all([loadStats(), loadBooks()]);
   } catch (e) {
     showToast('比對失敗：' + e.message);
   } finally {

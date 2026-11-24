@@ -2,7 +2,7 @@ from collections import Counter, defaultdict
 import json
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from app.auth import require_auth
@@ -14,6 +14,22 @@ from app.services.match_service import run_match
 router = APIRouter(prefix="/api/books", tags=["books"])
 
 _AUXILIARY_MATCH_FILTERS = {"same_title_different_isbn", "other_project_selected"}
+
+_VENDOR_BOOK_MATCH_COLUMNS = (
+    "vb.id, vb.batch_id, vb.award_item, vb.vendor_seq, vb.title, vb.author, "
+    "vb.isbn, vb.isbn_normalized, vb.publish_date, vb.list_price, vb.purchase_price, "
+    "vb.publisher, vb.age_range, vb.isbn_status, vb.completeness_status, "
+    "vb.policy_topic, vb.award_notes, vb.user_overrides, vb.source_row_number, "
+    "vb.category, vb.book_type, vb.summary, vb.source_url, "
+    "vb.recommendation_source, vb.eligibility_label, vb.classification_number"
+)
+
+
+def _json_response(payload: Any) -> Response:
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False),
+        media_type="application/json",
+    )
 
 
 def _parse_overrides(raw: Any) -> dict[str, Any]:
@@ -45,6 +61,9 @@ async def get_matches(
     completeness_status: str | None = Query(None),
     vendor_name: str | None = Query(None),
     include_missing_isbn: bool = Query(False),
+    page: int | None = Query(None, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    include_offers: bool = Query(True),
     user_id: int = Depends(require_auth),
 ):
     _ = user_id
@@ -72,7 +91,8 @@ async def get_matches(
         project_type = proj_row["project_type"] if proj_row else None
 
         rows = conn.execute(
-            f"SELECT vb.*, COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) AS vendor_name, bm.match_status "
+            f"SELECT {_VENDOR_BOOK_MATCH_COLUMNS}, "
+            f"  COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) AS vendor_name, bm.match_status "
             f"FROM vendor_books vb "
             f"JOIN import_batches ib ON ib.id = vb.batch_id "
             f"LEFT JOIN book_matches bm ON bm.vendor_book_id = vb.id "
@@ -83,7 +103,17 @@ async def get_matches(
         ).fetchall()
 
         if not rows:
-            return []
+            if page is not None:
+                return _json_response(
+                    {
+                        "items": [],
+                        "total": 0,
+                        "page": page,
+                        "page_size": page_size,
+                        "total_pages": 0,
+                    }
+                )
+            return _json_response([])
 
         copy_rows = conn.execute(
             "SELECT lh.isbn_normalized, COUNT(*) AS cnt "
@@ -147,27 +177,28 @@ async def get_matches(
                 }
             )
 
-        offer_rows = conn.execute(
-            "SELECT vb.id AS vendor_book_id, vb.isbn_normalized, "
-            "  COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) AS vendor_name, "
-            "  vb.purchase_price, vb.list_price "
-            "FROM vendor_books vb "
-            "JOIN import_batches ib ON ib.id = vb.batch_id "
-            "WHERE ib.batch_type = 'vendor_books' "
-            "  AND vb.isbn_status = 'valid' "
-            "  AND vb.isbn_normalized IS NOT NULL",
-            (DEFAULT_VENDOR_NAME,),
-        ).fetchall()
         offers_by_isbn: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for r in offer_rows:
-            offers_by_isbn[r["isbn_normalized"]].append(
-                {
-                    "vendor_book_id": r["vendor_book_id"],
-                    "vendor_name": r["vendor_name"],
-                    "purchase_price": r["purchase_price"],
-                    "list_price": r["list_price"],
-                }
-            )
+        if include_offers:
+            offer_rows = conn.execute(
+                "SELECT vb.id AS vendor_book_id, vb.isbn_normalized, "
+                "  COALESCE(NULLIF(TRIM(ib.vendor_name), ''), ?) AS vendor_name, "
+                "  vb.purchase_price, vb.list_price "
+                "FROM vendor_books vb "
+                "JOIN import_batches ib ON ib.id = vb.batch_id "
+                "WHERE ib.batch_type = 'vendor_books' "
+                "  AND vb.isbn_status = 'valid' "
+                "  AND vb.isbn_normalized IS NOT NULL",
+                (DEFAULT_VENDOR_NAME,),
+            ).fetchall()
+            for r in offer_rows:
+                offers_by_isbn[r["isbn_normalized"]].append(
+                    {
+                        "vendor_book_id": r["vendor_book_id"],
+                        "vendor_name": r["vendor_name"],
+                        "purchase_price": r["purchase_price"],
+                        "list_price": r["list_price"],
+                    }
+                )
 
     results: list[dict[str, Any]] = []
     for r in rows:
@@ -183,7 +214,7 @@ async def get_matches(
         item["similar_holding"] = similar_map.get(item["id"])
         item["other_project_selections"] = list(other_sel_map.get(isbn_norm, [])) if isbn_norm else []
 
-        if isbn_norm and isbn_norm in offers_by_isbn:
+        if include_offers and isbn_norm and isbn_norm in offers_by_isbn:
             other_offers = [
                 offer
                 for offer in offers_by_isbn[isbn_norm]
@@ -200,7 +231,22 @@ async def get_matches(
             continue
         results.append(item)
 
-    return results
+    if page is not None:
+        total = len(results)
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+        start = (page - 1) * page_size
+        page_items = results[start : start + page_size]
+        return _json_response(
+            {
+                "items": page_items,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+            }
+        )
+
+    return _json_response(results)
 
 
 @router.post("/run-match")
@@ -306,11 +352,13 @@ async def get_stats(
             f"WHERE ib.batch_type = 'vendor_books'{vendor_filter_sql} "
             "  AND vb.isbn_status = 'valid' "
             "  AND vb.isbn_normalized IS NOT NULL "
-            "  AND EXISTS ("
-            "    SELECT 1 FROM selection_items si "
+            "  AND vb.isbn_normalized IN ("
+            "    SELECT DISTINCT si.isbn_normalized "
+            "    FROM selection_items si "
             "    WHERE si.project_id != ? "
             "      AND si.selected_quantity > 0 "
-            "      AND si.isbn_normalized = vb.isbn_normalized"
+            "      AND si.isbn_normalized IS NOT NULL "
+            "      AND si.isbn_normalized != ''"
             "  )",
             [*vendor_params, project_id],
         ).fetchone()[0]
