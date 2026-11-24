@@ -61,7 +61,14 @@
 
   <!-- 館藏 -->
   <div id="tab-holdings" class="tab-panel active">
-    <div class="alert alert-info">支援 .xls 格式。館藏為全域共用，不限於特定採購專案。</div>
+    <div class="alert alert-info">支援 .xls / .xlsx 格式（含圖書館系統匯出之網頁表格 .xls）。館藏為全域共用，不限於特定採購專案。</div>
+    <div class="form-group" style="max-width:460px;margin-bottom:14px">
+      <label for="holdings-import-mode">匯入模式</label>
+      <select id="holdings-import-mode">
+        <option value="replace">全校覆蓋（清除既有館藏後重新匯入）</option>
+        <option value="append">增量追加（新書入館，保留既有館藏並略過重複）</option>
+      </select>
+    </div>
     <div class="upload-area" onclick="document.getElementById('holdings-file').click()" id="holdings-drop">
       <div class="icon">📁</div>
       <div>點擊或拖曳上傳 <strong>學校館藏 .xls</strong></div>
@@ -266,7 +273,7 @@ function formatImportError(message, context) {
     return '匯入失敗。請確認 Excel 格式正確、欄位含有 ISBN 或書名，再重新上傳。';
   }
   if (context === 'vendor-preview') {
-    return '無法讀取檔案，請確認為有效的 .xlsx 格式。';
+    return '無法讀取檔案，請確認為有效的 .xlsx 或 .xls 格式。';
   }
   return '匯入失敗。請確認欄位對應正確，書名、ISBN 欄位有資料，再重試。';
 }
@@ -381,21 +388,31 @@ function switchTab(name, btn) {
 
 async function uploadHoldings(file) {
   if (!file) return;
-  if (hasExistingHoldings && !confirm('系統已有學校館藏資料，重新匯入將會覆蓋既有館藏並重新比對。確定要繼續嗎？')) {
-    return;
+  const modeEl = document.getElementById('holdings-import-mode');
+  const importMode = modeEl ? modeEl.value : 'replace';
+  if (importMode === 'replace') {
+    if (hasExistingHoldings && !confirm('系統已有學校館藏資料，全校覆蓋將會清除既有館藏並重新比對。確定要繼續嗎？')) {
+      return;
+    }
+  } else {
+    if (!confirm('將以增量追加模式匯入新書，保留既有館藏並自動略過重複書目。確定要繼續嗎？')) {
+      return;
+    }
   }
   const el = document.getElementById('holdings-result');
   el.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> 匯入中...</div>';
   const fd = new FormData();
   fd.append('file', file);
+  fd.append('import_mode', importMode);
   try {
     const result = await api('/api/imports/holdings', { method: 'POST', body: fd });
-    hasExistingHoldings = true;
-    const replaced = result.replaced ? '已覆蓋既有館藏，' : '';
+    const addedCount = Number(result.record_count) || 0;
+    const skippedDup = Number(result.skipped_duplicate_count) || 0;
+    if (addedCount > 0) hasExistingHoldings = true;
     let sheetInfo = '';
     if (result.sheet_summaries && result.sheet_summaries.length >= 1) {
       sheetInfo = '<br>各工作表：' + result.sheet_summaries
-        .map(s => `${esc(s.sheet_name)}（${s.record_count} 筆）`).join('、');
+        .map(s => `${esc(s.sheet_name)}（新增 ${Number(s.record_count) || 0} 筆${s.skipped_duplicate_count ? `、略過重複 ${Number(s.skipped_duplicate_count)} 筆` : ''}）`).join('、');
     }
     let skippedInfo = '';
     if (result.skipped_sheets && result.skipped_sheets.length) {
@@ -408,9 +425,18 @@ async function uploadHoldings(file) {
     } else if (result.match_rerun) {
       matchInfo = `<br>已重新執行全校共用書商書單比對`;
     }
+    let summaryLine = '';
+    if (addedCount === 0 && skippedDup > 0) {
+      summaryLine = `本次增量匯入的 <strong>${skippedDup}</strong> 筆書目皆已存在於館藏中，未新增重複資料。`;
+    } else if (result.replaced) {
+      summaryLine = `✓ 已覆蓋既有館藏，共 <strong>${addedCount}</strong> 筆`;
+    } else {
+      summaryLine = `✓ 已增量追加 <strong>${addedCount}</strong> 筆` + (skippedDup > 0 ? `（略過重複 ${skippedDup} 筆）` : '');
+    }
+    const alertCls = (addedCount === 0 && skippedDup > 0) ? 'alert-info' : 'alert-success';
     el.innerHTML = `
-      <div class="alert alert-success">
-        ✓ ${replaced}共 <strong>${result.record_count}</strong> 筆
+      <div class="alert ${alertCls}">
+        ${summaryLine}
         ${result.unmapped_fields && result.unmapped_fields.length ? `<br>未對應欄位：${esc(result.unmapped_fields.join('、'))}` : ''}
         ${sheetInfo}${skippedInfo}${matchInfo}
       </div>
@@ -418,7 +444,7 @@ async function uploadHoldings(file) {
         <button type="button" class="btn btn-primary btn-sm" onclick="switchTab('vendor')">下一步：匯入書商書單 →</button>
         <a href="/match.html" class="btn btn-secondary btn-sm">前往比對結果 →</a>
       </div>`;
-    showToast('館藏匯入完成');
+    showToast(addedCount === 0 && skippedDup > 0 ? '館藏皆已存在，未新增重複資料' : '館藏匯入完成');
   } catch (e) {
     el.innerHTML = `<div class="alert alert-error">${esc(formatImportError(e.message, 'holdings'))}</div>`;
   }
@@ -549,17 +575,29 @@ function renderRecommendedProfileBanner() {
   `;
 }
 
+function normalizeHeader(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
 function applyRecommendedProfile() {
   const rec = previewData && previewData.recommended_profile;
   if (!rec) return;
-  const srcSet = new Set(previewData.source_columns || []);
+  const normToSrc = new Map();
+  (previewData.source_columns || []).forEach(col => {
+    const key = normalizeHeader(col);
+    if (key && !normToSrc.has(key)) normToSrc.set(key, col);
+  });
   const applied = {};
   Object.entries(rec.mappings || {}).forEach(([sys, src]) => {
-    if (src && srcSet.has(src)) applied[sys] = src;
+    if (!src) return;
+    const matched = normToSrc.get(normalizeHeader(src));
+    if (matched) applied[sys] = matched;
   });
   savedMappings = applied;
   if (Array.isArray(rec.extra_field_settings)) {
-    savedExtraFields = rec.extra_field_settings.filter(col => srcSet.has(col));
+    savedExtraFields = rec.extra_field_settings
+      .map(col => normToSrc.get(normalizeHeader(col)))
+      .filter(Boolean);
   }
   renderMappingTable();
   showToast(`已套用設定檔「${rec.name}」`);

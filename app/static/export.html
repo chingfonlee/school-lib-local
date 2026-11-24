@@ -79,6 +79,14 @@
   <div class="card">
     <h2>匯出紀錄</h2>
     <div id="job-list"><p style="color:#999">無紀錄</p></div>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e5ea">
+      <h3 style="margin:0 0 8px;font-size:16px">採購完成回流館藏</h3>
+      <p style="font-size:13px;color:#6e6e73;margin:0 0 12px">
+        採購完成後，可將本案已選購書目一鍵記入學校館藏，避免下一個補助案重複採購（重複操作會自動略過已回流書目）。
+      </p>
+      <button class="btn btn-secondary" id="commit-holdings-btn" onclick="commitToHoldings()">將本案已採購書目記入館藏</button>
+      <div id="commit-holdings-result" style="margin-top:12px"></div>
+    </div>
   </div>
 </div>
 <div id="toast"></div>
@@ -87,6 +95,7 @@
 const LAST_SCHOOL_NAME_KEY = 'last_export_school_name';
 let pid = null;
 let projectType = null;
+let selectedCountForCommit = 0;
 
 requireAuth().then(async () => {
   pid = requireProject();
@@ -141,6 +150,10 @@ async function loadPreview() {
       api(`/api/exports/check?project_id=${pid}&price_field=${encodeURIComponent(pf)}&subtotal_mode=${encodeURIComponent(sm)}`),
       api(`/api/selections/?project_id=${pid}`)
     ]);
+
+    selectedCountForCommit = sel.items.filter(b => b.selected_quantity > 0).length;
+    const commitBtn = document.getElementById('commit-holdings-btn');
+    if (commitBtn) commitBtn.disabled = selectedCountForCommit === 0;
 
     const items = sel.items.filter(b => {
       if (!b.selected_quantity) return false;
@@ -244,6 +257,47 @@ async function doExport() {
     showToast('匯出失敗：' + e.message, 5000);
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function commitToHoldings() {
+  if (!pid) return;
+  const countHint = selectedCountForCommit > 0 ? `本案預計回流 ${selectedCountForCommit} 筆已選購書目，` : '';
+  if (!confirm(`${countHint}記入學校館藏後可避免下一個補助案重複採購，且重複操作會自動略過已回流書目。確定要執行嗎？`)) {
+    return;
+  }
+  const btn = document.getElementById('commit-holdings-btn');
+  const resultEl = document.getElementById('commit-holdings-result');
+  btn.disabled = true;
+  resultEl.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> 正在將已採購書目記入學校館藏...</div>';
+  try {
+    const res = await api('/api/exports/commit-to-holdings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: pid }),
+    });
+    const inserted = Number(res.inserted_count) || 0;
+    const skipped = Number(res.skipped_count) || 0;
+    let matchNote = '';
+    if (res.match_rerun_error) {
+      matchNote = '<br><span class="text-warning">⚠ 已寫入館藏，但自動比對失敗，請到比對頁手動重新比對。</span>';
+    } else if (res.match_rerun) {
+      matchNote = '<br>已自動重新執行全校共用書商書單比對。';
+    }
+    if (inserted > 0) {
+      const skippedText = skipped > 0 ? `，略過已回流 ${skipped} 筆` : '';
+      resultEl.innerHTML = `<div class="alert alert-success">✓ 已將「${esc(res.project_name)}」新增 <strong>${inserted}</strong> 筆至學校館藏${skippedText}。${matchNote}</div>`;
+      showToast(`已新增 ${inserted} 筆至學校館藏`);
+    } else {
+      resultEl.innerHTML = `<div class="alert alert-info">本案 ${skipped} 筆已選購書目先前皆已回流至學校館藏，未重複寫入。</div>`;
+      showToast('本案書目皆已回流至館藏');
+    }
+    await loadPreview();
+  } catch (e) {
+    resultEl.innerHTML = `<div class="alert alert-error">記入館藏失敗：${esc(e.message)}</div>`;
+    showToast('記入館藏失敗：' + e.message, 4000);
+  } finally {
+    btn.disabled = selectedCountForCommit === 0;
   }
 }
 </script>
