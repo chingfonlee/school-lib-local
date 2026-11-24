@@ -1,5 +1,4 @@
 from fastapi import Request, HTTPException
-from fastapi.responses import RedirectResponse
 
 
 def require_auth(request: Request):

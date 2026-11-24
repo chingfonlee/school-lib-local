@@ -1,5 +1,4 @@
 """Tests for project delete, backup, and restore API endpoints."""
-import io
 import sqlite3
 import tempfile
 from pathlib import Path

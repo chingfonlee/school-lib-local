@@ -178,7 +178,7 @@ def test_save_stable_path_per_project_type(admin_tmp, admin_db, monkeypatch, tmp
         ("local_culture",    _FULL_LOCAL_CULTURE),
         ("local_culture_jh", _FULL_LOCAL_CULTURE),
     ]:
-        xlsx = allowed / f"same_name.xlsx"
+        xlsx = allowed / "same_name.xlsx"
         xlsx.write_bytes(b"fake xlsx")
         body = {
             **_SAVE_BASE,

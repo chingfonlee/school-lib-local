@@ -25,10 +25,21 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Create config from example
         run: cp config.example.yaml config.yaml
+
+      - name: Syntax check
+        run: python -m compileall -q app
+
+      - name: Lint check
+        run: python -m ruff check app tests
+
+      - name: Type check
+        run: python -m mypy app/logging_config.py app/database.py app/main.py app/routers/backup.py app/routers/projects.py
 
       - name: Run tests
         run: python -m pytest -q

@@ -1,4 +1,3 @@
-import pytest
 from app.services.completeness_service import compute
 
 

@@ -426,7 +426,9 @@ def export_general_books(settings: ExportSettings) -> str:
         price = _get_price(book, settings.price_field)
         subtotal = quantity * price
 
-        ws.cell(row=row, column=col("eligibility_label")).value = _resolve_eligibility_for_export(book, project_type) or None
+        ws.cell(row=row, column=col("eligibility_label")).value = (
+            _resolve_eligibility_for_export(book, project_type) or None
+        )
         ws.cell(row=row, column=col("sort_order")).value = i + 1
         ws.cell(row=row, column=col("title")).value = _resolve_field(book, "title")
         ws.cell(row=row, column=col("author")).value = _resolve_field(book, "author") or None
@@ -436,7 +438,9 @@ def export_general_books(settings: ExportSettings) -> str:
         )
         ws.cell(row=row, column=col("quantity")).value = quantity
         if "recommendation_source" in col_map:
-            ws.cell(row=row, column=col("recommendation_source")).value = _resolve_field(book, "recommendation_source") or None
+            ws.cell(row=row, column=col("recommendation_source")).value = (
+                _resolve_field(book, "recommendation_source") or None
+            )
         if "policy_topic" in col_map:
             ws.cell(row=row, column=col("policy_topic")).value = _format_policy_topic_for_export(
                 _resolve_field(book, "policy_topic")
