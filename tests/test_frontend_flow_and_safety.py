@@ -163,8 +163,9 @@ def test_selection_flow_sync_and_ux() -> None:
     assert "selIdMap[s.id] = s.sel_id;" in sel
     assert "const selId = selIdMap[bookId] || null;" in sel
 
-    # Unselect, sticky budget bar, filter persistence, debounce + IME, preserve page
-    assert "function removeBook(" in sel
+    # Selection lock rule, sticky budget bar, filter persistence, debounce + IME, preserve page
+    assert "function removeBook(" not in sel
+    assert "LOCKED_CTA_TITLE" in sel
     assert "position: sticky" in sel
     assert "budget-remaining" in sel
     assert "compositionstart" in sel
