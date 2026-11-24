@@ -7,9 +7,7 @@
 <link rel="stylesheet" href="/css/style.css">
 <style>
 .filter-field { display: flex; align-items: center; gap: 8px; }
-#budget-bar { position: sticky; top: 56px; z-index: 50; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-.book-cta.selected { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; cursor: pointer; }
-.book-cta.selected:hover { background: #ffebee; color: #c0392b; border-color: #ef9a9a; }
+#budget-bar { position: sticky; top: 56px; z-index: 50; box-shadow: 0 2px 8px rgba(0,0,0,0.06); gap: 16px 28px; align-items: center; }
 </style>
 </head>
 <body>
@@ -32,7 +30,8 @@
 <div class="page container">
   <div class="section-header">
     <div><h1>選書</h1><p class="subtitle" id="project-label">目前專案：載入中...</p></div>
-    <div class="right">
+    <div class="right" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" id="btn-import-projects" onclick="openImportProjectsModal()">從其他專案匯入選書</button>
       <button class="btn btn-secondary btn-sm" id="btn-clear-all" onclick="clearAll(this)" style="color:#c0392b">清空選書</button>
     </div>
   </div>
@@ -56,8 +55,27 @@
       <div class="label" id="budget-remaining-label">核定預算</div>
       <div class="amount" id="budget-remaining">—</div>
     </div>
-    <div style="margin-left:auto">
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-dist" onclick="toggleSelectionDist()">已選分佈 ▾</button>
       <a href="/export-check.html" class="btn btn-primary btn-sm">前往匯出前檢查 →</a>
+    </div>
+    <div class="budget-progress-wrap" id="budget-progress-wrap" style="display:none">
+      <div class="budget-progress-track">
+        <div class="budget-progress-fill is-normal" id="budget-progress-fill" style="width:0%"></div>
+      </div>
+      <span class="budget-progress-text" id="budget-progress-text">0%</span>
+    </div>
+    <div class="selection-dist-panel" id="selection-dist-panel" style="display:none"></div>
+  </div>
+
+  <div class="preset-chips-bar" id="preset-chips-bar">
+    <button type="button" class="preset-chip" id="preset-new-books" onclick="togglePreset('new_books')">只看可買新書</button>
+    <button type="button" class="preset-chip" id="preset-award-books" onclick="togglePreset('award_books')">只看已獲獎好書</button>
+    <button type="button" class="preset-chip" id="preset-unselected" onclick="togglePreset('unselected')">只看未選書目</button>
+    <button type="button" class="preset-chip" id="preset-selected" onclick="togglePreset('selected')">只看已選清單</button>
+    <div class="view-toggle" role="group" aria-label="檢視模式切換">
+      <button type="button" id="btn-view-cards" class="active" onclick="setViewMode('cards')">卡片模式</button>
+      <button type="button" id="btn-view-list" onclick="setViewMode('list')">精簡列表</button>
     </div>
   </div>
 
@@ -85,6 +103,16 @@
         <option value="export_ready">可匯出</option>
         <option value="needs_review">需補資料</option>
         <option value="missing_required">缺必填</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>出版年份：</label>
+      <select id="filter-pub-year" onchange="applyFilter()">
+        <option value="">全部</option>
+        <option value="1">近 1 年</option>
+        <option value="2">近 2 年</option>
+        <option value="3">近 3 年</option>
+        <option value="5">近 5 年</option>
       </select>
     </div>
     <div class="filter-field" id="field-book-type" style="display:none">
@@ -124,6 +152,8 @@
     <input type="text" id="filter-text" placeholder="關鍵字搜尋..." style="width:160px">
     <select id="filter-sort" onchange="applyFilter()">
       <option value="id">匯入順序</option>
+      <option value="pub_desc">出版最新優先（新→舊）</option>
+      <option value="pub_asc">出版年份（舊→新）</option>
       <option value="available_first">可採購優先</option>
       <option value="completeness_first">完整度優先</option>
       <option value="price_asc">價格低→高</option>
@@ -133,6 +163,11 @@
     <button class="btn btn-secondary btn-sm" onclick="resetFilters()">重設篩選</button>
     <button class="btn btn-secondary btn-sm" id="btn-add-page" onclick="addCurrentPage()">加入本頁</button>
     <span id="result-count" style="font-size:13px;color:#666"></span>
+  </div>
+
+  <div id="selected-only-banner" class="selected-only-banner" style="display:none">
+    <span>目前僅顯示本案已加入選書的書目；如需調整購買數量（2 本以上）或移除單本，請至「5 匯出前檢查」。</span>
+    <a href="/export-check.html" class="btn btn-primary btn-sm">前往匯出前檢查調整數量 →</a>
   </div>
 
   <div id="book-grid" class="books-grid"></div>
@@ -150,6 +185,31 @@
     <div id="cleared-grid" class="books-grid"></div>
   </div>
 </div>
+
+<div id="import-projects-modal" class="modal-backdrop" style="display:none" onclick="if (event.target === this) closeImportProjectsModal()">
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+    <div class="modal-header">
+      <h3 id="import-modal-title">從其他專案匯入選書</h3>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeImportProjectsModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:#555;margin-bottom:8px">
+        勾選要匯整的來源專案（例如班級推薦或師生清單），系統將以每本數量 1 複製快照並自動去除重複書目，同時依目前專案類型重算資料完整度。
+      </p>
+      <div id="import-projects-list" class="modal-project-list">載入專案中...</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px;cursor:pointer">
+        <input type="checkbox" id="import-skip-owned" checked>
+        <span>自動略過已館藏書目（建議維持勾選）</span>
+      </label>
+      <div id="import-projects-result" class="alert alert-success" style="display:none;margin-top:12px;margin-bottom:0"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeImportProjectsModal()">關閉</button>
+      <button type="button" class="btn btn-primary btn-sm" id="btn-confirm-import-projects" onclick="submitImportFromProjects(this)">開始匯入</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 <script src="/js/common.js"></script>
 <script>
@@ -160,6 +220,7 @@ let projectSubtotalMode = 'quantity_times_purchase_price';
 let allBooks = [];
 let selMap = {};
 let selIdMap = {};
+let currentSelectionItems = [];
 const PAGE_SIZE = 50;
 let currentPage = 1;
 let filteredBooks = [];
@@ -167,12 +228,80 @@ let filterDebounceTimer = null;
 let isComposing = false;
 let filtersRestored = false;
 
+const VIEW_MODE_KEY = 'selection_view_mode';
+const LOCKED_CTA_TITLE = '已加入選書，如需調整數量或移除請至「5 匯出前檢查」';
+let viewMode = (function loadViewMode() {
+  try { return localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'cards'; }
+  catch { return 'cards'; }
+})();
+let awardOnly = false;
+let selFilterMode = ''; // '' | 'unselected' | 'selected'
+let distPanelOpen = false;
+
 const FILTER_IDS = [
-  'filter-vendor', 'filter-match', 'filter-comp', 'filter-book-type', 'filter-age',
-  'filter-category', 'filter-policy-topic', 'filter-purchase-category',
-  'filter-recommendation-source', 'filter-min-price', 'filter-max-price',
-  'filter-text', 'filter-sort',
+  'filter-vendor', 'filter-match', 'filter-comp', 'filter-pub-year',
+  'filter-book-type', 'filter-age', 'filter-category', 'filter-policy-topic',
+  'filter-purchase-category', 'filter-recommendation-source',
+  'filter-min-price', 'filter-max-price', 'filter-text', 'filter-sort',
 ];
+
+function parsePublishSortKey(raw) {
+  if (raw === null || raw === undefined) return null;
+  let s = String(raw).trim();
+  if (!s) return null;
+  s = s.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+
+  let y = null, m = 1, d = 1;
+  let isRoc = false;
+  let match;
+
+  if ((match = s.match(/^(民國\s*)?(\d{2,4})\s*(?:年|[\/\-\.])\s*(\d{1,2})(?:\s*月(?:\s*(\d{1,2})\s*日?)?|\s*[\/\-\.]\s*(\d{1,2})\s*日?)?$/))) {
+    isRoc = Boolean(match[1]) || match[2].length === 3;
+    if (!isRoc && match[2].length !== 4) return null;
+    y = parseInt(match[2], 10);
+    m = parseInt(match[3], 10);
+    const dayStr = match[4] || match[5];
+    d = dayStr ? parseInt(dayStr, 10) : 1;
+  } else if ((match = s.match(/^(民國\s*)?(\d{2,4})\s*年$/))) {
+    isRoc = Boolean(match[1]) || match[2].length === 3;
+    if (!isRoc && match[2].length !== 4) return null;
+    y = parseInt(match[2], 10);
+  } else if ((match = s.match(/^(\d{4})(\d{2})(\d{2})$/))) {
+    y = parseInt(match[1], 10);
+    m = parseInt(match[2], 10);
+    d = parseInt(match[3], 10);
+  } else if ((match = s.match(/^(\d{4})(\d{2})$/))) {
+    y = parseInt(match[1], 10);
+    m = parseInt(match[2], 10);
+  } else if ((match = s.match(/^(\d{4})$/))) {
+    y = parseInt(match[1], 10);
+  } else if ((match = s.match(/^(\d{3})$/))) {
+    isRoc = true;
+    y = parseInt(match[1], 10);
+  } else {
+    return null;
+  }
+
+  if (isRoc) y += 1911;
+  if (isNaN(y) || y < 1900 || y > 2100) return null;
+  if (isNaN(m) || m < 1 || m > 12) return null;
+  if (isNaN(d) || d < 1 || d > 31) return null;
+  return y * 10000 + m * 100 + d;
+}
+
+function parsePublishYear(raw) {
+  const key = parsePublishSortKey(raw);
+  return key === null ? null : Math.floor(key / 10000);
+}
+
+function hasOfficialAward(b) {
+  const ov = safeParseJson(b.user_overrides, {});
+  const rec = String(ov.recommendation_source || b.recommendation_source || '').trim();
+  const award = String(ov.award_item || b.award_item || '').trim();
+  if (rec && rec !== '學校自選(請備註原因)') return true;
+  if (award && award !== '自選' && award !== '學校自選(請備註原因)') return true;
+  return false;
+}
 
 function filterStorageKey() {
   return `selection_filters_${pid}`;
@@ -180,7 +309,10 @@ function filterStorageKey() {
 
 function saveFilterState() {
   if (!pid) return;
-  const state = {};
+  const state = {
+    _awardOnly: awardOnly,
+    _selFilterMode: selFilterMode,
+  };
   FILTER_IDS.forEach(id => {
     const el = document.getElementById(id);
     if (el) state[id] = el.value;
@@ -204,6 +336,115 @@ function restoreFilterState() {
       el.value = saved[id];
     }
   });
+  awardOnly = Boolean(saved._awardOnly);
+  selFilterMode = (saved._selFilterMode === 'unselected' || saved._selFilterMode === 'selected')
+    ? saved._selFilterMode
+    : '';
+}
+
+function syncViewToggleUI() {
+  const cardsBtn = document.getElementById('btn-view-cards');
+  const listBtn = document.getElementById('btn-view-list');
+  if (cardsBtn) cardsBtn.classList.toggle('active', viewMode === 'cards');
+  if (listBtn) listBtn.classList.toggle('active', viewMode === 'list');
+}
+
+function setViewMode(mode) {
+  viewMode = mode === 'list' ? 'list' : 'cards';
+  try { localStorage.setItem(VIEW_MODE_KEY, viewMode); } catch {}
+  syncViewToggleUI();
+  renderCurrentPage();
+}
+
+function syncPresetChipsUI() {
+  const matchVal = document.getElementById('filter-match').value;
+  const pubYearVal = document.getElementById('filter-pub-year').value;
+  const sortVal = document.getElementById('filter-sort').value;
+
+  const isNewBooks = matchVal === 'available' && pubYearVal === '3' && sortVal === 'pub_desc';
+  document.getElementById('preset-new-books').classList.toggle('active', isNewBooks);
+  document.getElementById('preset-award-books').classList.toggle('active', awardOnly);
+  document.getElementById('preset-unselected').classList.toggle('active', selFilterMode === 'unselected');
+  document.getElementById('preset-selected').classList.toggle('active', selFilterMode === 'selected');
+
+  const banner = document.getElementById('selected-only-banner');
+  if (banner) banner.style.display = selFilterMode === 'selected' ? 'flex' : 'none';
+}
+
+function togglePreset(preset) {
+  const matchEl = document.getElementById('filter-match');
+  const pubEl = document.getElementById('filter-pub-year');
+  const sortEl = document.getElementById('filter-sort');
+
+  if (preset === 'new_books') {
+    const active = matchEl.value === 'available' && pubEl.value === '3' && sortEl.value === 'pub_desc';
+    if (active) {
+      if (!awardOnly) matchEl.value = '';
+      pubEl.value = '';
+      sortEl.value = 'id';
+    } else {
+      matchEl.value = 'available';
+      pubEl.value = '3';
+      sortEl.value = 'pub_desc';
+    }
+  } else if (preset === 'award_books') {
+    if (awardOnly) {
+      awardOnly = false;
+      const isNewBooks = matchEl.value === 'available' && pubEl.value === '3' && sortEl.value === 'pub_desc';
+      if (!isNewBooks && matchEl.value === 'available') matchEl.value = '';
+    } else {
+      awardOnly = true;
+      matchEl.value = 'available';
+    }
+  } else if (preset === 'unselected') {
+    selFilterMode = selFilterMode === 'unselected' ? '' : 'unselected';
+  } else if (preset === 'selected') {
+    selFilterMode = selFilterMode === 'selected' ? '' : 'selected';
+  }
+  applyFilter();
+}
+
+function toggleSelectionDist() {
+  distPanelOpen = !distPanelOpen;
+  const panel = document.getElementById('selection-dist-panel');
+  const btn = document.getElementById('btn-toggle-dist');
+  if (panel) panel.style.display = distPanelOpen ? 'flex' : 'none';
+  if (btn) btn.textContent = distPanelOpen ? '已選分佈 ▴' : '已選分佈 ▾';
+}
+
+function renderSelectionDistribution(items) {
+  const panel = document.getElementById('selection-dist-panel');
+  if (!panel) return;
+  if (!Array.isArray(items) || items.length === 0) {
+    panel.innerHTML = '<div style="color:#6e6e73">尚未加入任何書目，加入選書後將即時顯示適讀年齡與分類分佈。</div>';
+    return;
+  }
+
+  const countBy = (field) => {
+    const map = {};
+    items.forEach(item => {
+      const ov = safeParseJson(item.user_overrides, {});
+      const raw = String(ov[field] || item[field] || '').trim();
+      const label = raw || '未標示';
+      const qty = Number(item.selected_quantity) || 1;
+      map[label] = (map[label] || 0) + qty;
+    });
+    return Object.entries(map).sort((a, b) => {
+      if (a[0] === '未標示') return 1;
+      if (b[0] === '未標示') return -1;
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0], 'zh-TW');
+    });
+  };
+
+  const renderGroup = (title, entries) => {
+    const chips = entries.map(([label, cnt]) =>
+      `<span class="dist-chip">${esc(label)} <strong>${cnt}本</strong></span>`
+    ).join('');
+    return `<div class="dist-group"><span class="dist-group-label">${esc(title)}</span>${chips}</div>`;
+  };
+
+  panel.innerHTML = renderGroup('適讀年齡', countBy('age_range')) + renderGroup('分類', countBy('category'));
 }
 
 function scheduleFilter() {
@@ -232,6 +473,10 @@ function updateBudgetBar(summary) {
   const wrap = document.getElementById('budget-remaining-wrap');
   const labelEl = document.getElementById('budget-remaining-label');
   const amountEl = document.getElementById('budget-remaining');
+  const progWrap = document.getElementById('budget-progress-wrap');
+  const progFill = document.getElementById('budget-progress-fill');
+  const progText = document.getElementById('budget-progress-text');
+
   if (projectBudget != null && !isNaN(projectBudget)) {
     const used = projectSubtotalMode === 'quantity_times_list_price'
       ? Number(summary.total_list_price || 0)
@@ -247,10 +492,28 @@ function updateBudgetBar(summary) {
       amountEl.textContent = 'NT$ ' + formatCurrency(-diff);
       amountEl.style.color = '#c0392b';
     }
+
+    if (projectBudget > 0) {
+      const pct = (used / projectBudget) * 100;
+      const barWidth = Math.min(100, Math.max(0, pct));
+      const stateCls = pct > 100 ? 'is-over' : (pct >= 90 ? 'is-near' : 'is-normal');
+      progWrap.style.display = 'flex';
+      progFill.style.width = `${barWidth.toFixed(1)}%`;
+      progFill.className = `budget-progress-fill ${stateCls}`;
+      progText.className = `budget-progress-text${pct > 100 ? ' is-over' : ''}`;
+      progText.textContent = pct > 100
+        ? `預算達成率 ${pct.toFixed(1)}%（超支 NT$ ${formatCurrency(-diff)}）`
+        : `預算達成率 ${pct.toFixed(1)}%（剩餘 NT$ ${formatCurrency(diff)}）`;
+    } else {
+      progWrap.style.display = 'none';
+    }
   } else {
     wrap.style.display = 'none';
+    progWrap.style.display = 'none';
   }
 }
+
+syncViewToggleUI();
 
 requireAuth().then(async () => {
   pid = requireProject();
@@ -291,13 +554,15 @@ async function loadData(opts = {}) {
       api(`/api/selections/?project_id=${pid}`)
     ]);
     allBooks = books;
+    currentSelectionItems = selData.items || [];
     selMap = {};
     selIdMap = {};
-    selData.items.forEach(s => {
+    currentSelectionItems.forEach(s => {
       selMap[s.id] = s.selected_quantity;
       selIdMap[s.id] = s.sel_id;
     });
     updateBudgetBar(selData.summary);
+    renderSelectionDistribution(currentSelectionItems);
     populateDynamicSelects();
     if (!filtersRestored) {
       restoreFilterState();
@@ -307,7 +572,7 @@ async function loadData(opts = {}) {
     if (typeof opts.preserveScrollY === 'number') {
       window.scrollTo(0, opts.preserveScrollY);
     }
-    const clearedItems = selData.items.filter(s => !s.vendor_book_still_exists);
+    const clearedItems = currentSelectionItems.filter(s => !s.vendor_book_still_exists);
     renderClearedItems(clearedItems);
   } catch (e) {
     showToast('載入資料失敗：' + e.message);
@@ -380,6 +645,22 @@ const MATCH_ORDER = { available: 0, already_owned: 1, missing_isbn: 2, invalid_i
 
 function compareBooks(a, b, sortMode) {
   switch (sortMode) {
+    case 'pub_desc': {
+      const ka = parsePublishSortKey(a.publish_date);
+      const kb = parsePublishSortKey(b.publish_date);
+      if (ka === null && kb === null) return a.id - b.id;
+      if (ka === null) return 1;
+      if (kb === null) return -1;
+      return ka !== kb ? kb - ka : a.id - b.id;
+    }
+    case 'pub_asc': {
+      const ka = parsePublishSortKey(a.publish_date);
+      const kb = parsePublishSortKey(b.publish_date);
+      if (ka === null && kb === null) return a.id - b.id;
+      if (ka === null) return 1;
+      if (kb === null) return -1;
+      return ka !== kb ? ka - kb : a.id - b.id;
+    }
     case 'available_first': {
       const da = MATCH_ORDER[getEffectiveMatchStatus(a)] ?? 5;
       const db = MATCH_ORDER[getEffectiveMatchStatus(b)] ?? 5;
@@ -413,9 +694,11 @@ function compareBooks(a, b, sortMode) {
 
 function applyFilter(opts = {}) {
   saveFilterState();
+  syncPresetChipsUI();
   const vendorVal = document.getElementById('filter-vendor').value;
   const matchVal = document.getElementById('filter-match').value;
   const comp = document.getElementById('filter-comp').value;
+  const pubYearRange = document.getElementById('filter-pub-year').value;
   const bookType = document.getElementById('filter-book-type').value;
   const ageRange = document.getElementById('filter-age').value;
   const category = document.getElementById('filter-category').value;
@@ -437,6 +720,22 @@ function applyFilter(opts = {}) {
     filtered = filtered.filter(b => getEffectiveMatchStatus(b) === matchVal);
   }
   if (comp) filtered = filtered.filter(b => b.completeness_status === comp);
+  if (pubYearRange) {
+    const span = parseInt(pubYearRange, 10);
+    if (!isNaN(span) && span > 0) {
+      const minYear = new Date().getFullYear() - (span - 1);
+      filtered = filtered.filter(b => {
+        const y = parsePublishYear(b.publish_date);
+        return y !== null && y >= minYear;
+      });
+    }
+  }
+  if (awardOnly) filtered = filtered.filter(b => hasOfficialAward(b));
+  if (selFilterMode === 'unselected') {
+    filtered = filtered.filter(b => !selMap[b.id]);
+  } else if (selFilterMode === 'selected') {
+    filtered = filtered.filter(b => (selMap[b.id] || 0) > 0);
+  }
   if (bookType) filtered = filtered.filter(b => (b.book_type || '') === bookType);
   if (ageRange) filtered = filtered.filter(b => (b.age_range || '') === ageRange);
   if (category) filtered = filtered.filter(b => (b.category || '') === category);
@@ -512,10 +811,18 @@ function goPage(delta) {
 }
 
 function resetFilters() {
-  ['filter-vendor', 'filter-match', 'filter-comp', 'filter-book-type', 'filter-age', 'filter-category', 'filter-policy-topic', 'filter-purchase-category', 'filter-recommendation-source', 'filter-sort']
-    .forEach(id => { const s = document.getElementById(id); s.value = s.options[0].value; });
+  [
+    'filter-vendor', 'filter-match', 'filter-comp', 'filter-pub-year',
+    'filter-book-type', 'filter-age', 'filter-category', 'filter-policy-topic',
+    'filter-purchase-category', 'filter-recommendation-source', 'filter-sort'
+  ].forEach(id => {
+    const s = document.getElementById(id);
+    if (s && s.options.length > 0) s.value = s.options[0].value;
+  });
   ['filter-min-price', 'filter-max-price', 'filter-text']
     .forEach(id => { document.getElementById(id).value = ''; });
+  awardOnly = false;
+  selFilterMode = '';
   try { sessionStorage.removeItem(filterStorageKey()); } catch {}
   applyFilter();
 }
@@ -569,15 +876,148 @@ function renderDuplicateWarnings(b) {
   return html;
 }
 
+function renderCtaButton(b, compact = false) {
+  const qty = selMap[b.id] || 0;
+  if (qty > 0) {
+    return `<button class="book-cta selected" id="cta-${b.id}" disabled title="${esc(LOCKED_CTA_TITLE)}">✓ 已加入（${qty}本）</button>`;
+  }
+  const label = compact ? '＋加入' : '＋ 加入選書';
+  return `<button class="book-cta" id="cta-${b.id}" onclick="addBook(${b.id}, this)">${label}</button>`;
+}
+
+function renderInlineEditForm(b) {
+  const ov = safeParseJson(b.user_overrides, {});
+  const isGeneral = isGeneralBooks(projectType);
+  const curElig = ov.eligibility_label || b.eligibility_label || '';
+  const curRecSrc = ov.recommendation_source || b.recommendation_source || '';
+  const eligOptions = ['', '必選', '推薦', '自選'].map(v =>
+    `<option value="${esc(v)}" ${curElig === v ? 'selected' : ''}>${esc(v) || '（原始）'}</option>`).join('');
+  const recSrcOptions = ['', ...H_ALLOWED].map(v =>
+    `<option value="${esc(v)}" ${curRecSrc === v ? 'selected' : ''}>${esc(v) || '（原始）'}</option>`).join('');
+  return `
+    <div class="inline-edit open">
+      <div class="field-row"><label>書名</label><input type="text" value="${esc(ov.title||b.title||'')}" data-field="title" data-bookid="${b.id}"></div>
+      <div class="field-row"><label>作者</label><input type="text" value="${esc(ov.author||b.author||'')}" data-field="author" data-bookid="${b.id}"></div>
+      <div class="field-row"><label>出版社</label><input type="text" value="${esc(ov.publisher||b.publisher||'')}" data-field="publisher" data-bookid="${b.id}"></div>
+      ${!isGeneral ? `<div class="field-row"><label>獲獎項目</label><input type="text" value="${esc(ov.award_item||b.award_item||'')}" data-field="award_item" data-bookid="${b.id}"></div>` : ''}
+      ${isGeneral ? `<div class="field-row"><label>必選/推薦（${projectType === 'general_books_jh' ? 'B' : 'A'}欄）</label><select data-field="eligibility_label" data-bookid="${b.id}">${eligOptions}</select></div>` : ''}
+      ${projectType === 'general_books' ? `<div class="field-row"><label>H欄推薦來源</label><select data-field="recommendation_source" data-bookid="${b.id}">${recSrcOptions}</select></div>` : ''}
+      ${projectType === 'general_books_jh' ? `<div class="field-row"><label>K欄獲獎項目</label><select data-field="recommendation_source" data-bookid="${b.id}">${recSrcOptions}</select></div>` : ''}
+      ${projectType === 'general_books' ? `<div class="field-row"><label>備註（L欄）</label><input type="text" value="${esc(ov.award_notes||b.award_notes||'')}" data-field="award_notes" data-bookid="${b.id}"></div>` : ''}
+      <div class="field-row"><label>定價</label><input type="number" value="${esc(ov.list_price||b.list_price||'')}" data-field="list_price" data-bookid="${b.id}"></div>
+      <div class="field-row"><label>單價</label><input type="number" value="${esc(ov.purchase_price||b.purchase_price||'')}" data-field="purchase_price" data-bookid="${b.id}"></div>
+      <button class="btn btn-primary btn-sm" onclick="saveOverrides(${b.id}, this)">儲存修正</button>
+      <button class="btn btn-secondary btn-sm" onclick="toggleEdit(${b.id})">取消</button>
+    </div>`;
+}
+
+function renderListView(books) {
+  const rowsHtml = books.map(b => {
+    const ov = safeParseJson(b.user_overrides, {});
+    const title = ov.title || b.title || '—';
+    const author = ov.author || b.author || '—';
+    const publisher = ov.publisher || b.publisher || '—';
+    const pubDate = b.publish_date || '—';
+    const lp = ov.list_price || b.list_price;
+    const pp = ov.purchase_price || b.purchase_price;
+    const priceHtml = pp
+      ? `<strong>NT$ ${formatCurrency(pp)}</strong>`
+      : (lp ? `<span>定價 ${formatCurrency(lp)}</span>` : '—');
+    const holdingsUrl = b.isbn_normalized
+      ? `/holdings.html?isbn=${encodeURIComponent(b.isbn_normalized)}`
+      : `/holdings.html?q=${encodeURIComponent(b.title || '')}`;
+
+    let extraBadges = '';
+    if (b.similar_holding) {
+      const shTitle = esc(b.similar_holding.title || '');
+      extraBadges += `<span class="badge badge-similar" title="館藏：${shTitle}">疑似同名館藏</span>`;
+    }
+    if (Array.isArray(b.other_project_selections) && b.other_project_selections.length > 0) {
+      const exported = b.other_project_selections.filter(p => p.has_exported);
+      const selecting = b.other_project_selections.filter(p => !p.has_exported);
+      if (exported.length > 0) {
+        const names = exported.map(p => p.project_name || '').filter(Boolean).join('、');
+        extraBadges += `<span class="badge badge-other-exported" title="${esc(names)}">他案已匯出</span>`;
+      }
+      if (selecting.length > 0) {
+        const names = selecting.map(p => p.project_name || '').filter(Boolean).join('、');
+        extraBadges += `<span class="badge badge-other-project" title="${esc(names)}">他案選書中</span>`;
+      }
+    }
+    if (Array.isArray(b.other_vendor_offers) && b.other_vendor_offers.length > 0) {
+      const curPrice = getEffectivePrice(b);
+      const hasCheaper = b.other_vendor_offers.some(o => {
+        const oPrice = o.purchase_price != null ? Number(o.purchase_price)
+          : (o.list_price != null ? Number(o.list_price) : null);
+        return curPrice !== null && oPrice !== null && oPrice < curPrice;
+      });
+      const summaryText = b.other_vendor_offers.map(o => {
+        const pTxt = o.purchase_price != null ? `NT$${formatCurrency(o.purchase_price)}`
+          : (o.list_price != null ? `定價${formatCurrency(o.list_price)}` : '無價');
+        return `${o.vendor_name || '未指定'} ${pTxt}`;
+      }).join(' / ');
+      extraBadges += `<span class="badge badge-vendor" title="${esc(summaryText)}">他商比價（${b.other_vendor_offers.length}${hasCheaper ? '・有較低價' : ''}）</span>`;
+    }
+
+    return `
+      <tr>
+        <td>
+          <div class="books-list-title">${esc(title)}</div>
+          <div class="books-list-badges">
+            <span class="badge badge-vendor">${esc(b.vendor_name || '未指定書商')}</span>
+            ${renderMatchBadge(b)}
+            ${badge(b.completeness_status || 'unknown')}
+            ${extraBadges}
+          </div>
+        </td>
+        <td>${esc(author)}</td>
+        <td>${esc(publisher)}</td>
+        <td style="white-space:nowrap">${esc(pubDate)}</td>
+        <td style="white-space:nowrap">${priceHtml}</td>
+        <td>
+          <div class="books-list-actions">
+            ${renderCtaButton(b, true)}
+            <div class="books-list-links">
+              <a href="#" onclick="toggleEdit(${b.id}); return false;">修正</a>
+              <a href="${esc(holdingsUrl)}" target="_blank" rel="noopener">查館藏</a>
+            </div>
+          </div>
+        </td>
+      </tr>
+      <tr id="edit-${b.id}" class="books-list-edit-row" style="display:none">
+        <td colspan="6">${renderInlineEditForm(b)}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <table class="books-list-table">
+      <thead>
+        <tr>
+          <th>書名／狀態</th>
+          <th>作者</th>
+          <th>出版社</th>
+          <th>出版年</th>
+          <th>單價</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+}
+
 function render(books) {
   const grid = document.getElementById('book-grid');
+  grid.className = viewMode === 'list' ? 'books-list-wrap' : 'books-grid';
   if (!books.length) {
     grid.innerHTML = '<div style="text-align:center;color:#999;padding:60px 0">無符合條件的書目</div>';
     return;
   }
+  if (viewMode === 'list') {
+    grid.innerHTML = renderListView(books);
+    return;
+  }
   grid.innerHTML = books.map(b => {
     const ov = safeParseJson(b.user_overrides, {});
-    const isGeneral = isGeneralBooks(projectType);
     const title = ov.title || b.title || '—';
     const author = ov.author || b.author || '—';
     const isbn = b.isbn_normalized || b.isbn || '—';
@@ -586,25 +1026,16 @@ function render(books) {
     const award = ov.award_item || b.award_item || '';
     const summary = b.summary || '';
     const policyTopic = b.policy_topic || '';
-    const qty = selMap[b.id] || 0;
     const holdingsUrl = b.isbn_normalized
       ? `/holdings.html?isbn=${encodeURIComponent(b.isbn_normalized)}`
       : `/holdings.html?q=${encodeURIComponent(b.title || '')}`;
-    const ctaBtn = qty > 0
-      ? `<button class="book-cta selected" id="cta-${b.id}" onclick="removeBook(${b.id}, this)" title="點擊取消選書">✓ 已加入（取消）</button>`
-      : `<button class="book-cta" id="cta-${b.id}" onclick="addBook(${b.id}, this)">＋ 加入選書</button>`;
-    const curElig = ov.eligibility_label || b.eligibility_label || '';
-    const curRecSrc = ov.recommendation_source || b.recommendation_source || '';
-    const eligOptions = ['', '必選', '推薦', '自選'].map(v =>
-      `<option value="${esc(v)}" ${curElig === v ? 'selected' : ''}>${esc(v) || '（原始）'}</option>`).join('');
-    const recSrcOptions = ['', ...H_ALLOWED].map(v =>
-      `<option value="${esc(v)}" ${curRecSrc === v ? 'selected' : ''}>${esc(v) || '（原始）'}</option>`).join('');
+    const ctaBtn = renderCtaButton(b, false);
     return `
     <div class="book-card">
       <div class="book-card-body">
         <div class="book-card-title">${esc(title)}</div>
         <div class="book-card-meta">${esc(author)}</div>
-        <div class="book-card-isbn">ISBN: ${esc(isbn)}</div>
+        <div class="book-card-isbn">ISBN: ${esc(isbn)}${b.publish_date ? `｜出版：${esc(b.publish_date)}` : ''}</div>
         <div class="book-card-price">
           <span>定價 ${lp ? formatCurrency(lp) : '—'}</span>
           <span class="purchase">採購 ${pp ? formatCurrency(pp) : '—'}</span>
@@ -624,20 +1055,7 @@ function render(books) {
         ${ctaBtn}
       </div>
       <div id="edit-${b.id}" class="book-card-edit" style="display:none">
-        <div class="inline-edit open">
-          <div class="field-row"><label>書名</label><input type="text" value="${esc(ov.title||b.title||'')}" data-field="title" data-bookid="${b.id}"></div>
-          <div class="field-row"><label>作者</label><input type="text" value="${esc(ov.author||b.author||'')}" data-field="author" data-bookid="${b.id}"></div>
-          <div class="field-row"><label>出版社</label><input type="text" value="${esc(ov.publisher||b.publisher||'')}" data-field="publisher" data-bookid="${b.id}"></div>
-          ${!isGeneral ? `<div class="field-row"><label>獲獎項目</label><input type="text" value="${esc(ov.award_item||b.award_item||'')}" data-field="award_item" data-bookid="${b.id}"></div>` : ''}
-          ${isGeneral ? `<div class="field-row"><label>必選/推薦（${projectType === 'general_books_jh' ? 'B' : 'A'}欄）</label><select data-field="eligibility_label" data-bookid="${b.id}">${eligOptions}</select></div>` : ''}
-          ${projectType === 'general_books' ? `<div class="field-row"><label>H欄推薦來源</label><select data-field="recommendation_source" data-bookid="${b.id}">${recSrcOptions}</select></div>` : ''}
-          ${projectType === 'general_books_jh' ? `<div class="field-row"><label>K欄獲獎項目</label><select data-field="recommendation_source" data-bookid="${b.id}">${recSrcOptions}</select></div>` : ''}
-          ${projectType === 'general_books' ? `<div class="field-row"><label>備註（L欄）</label><input type="text" value="${esc(ov.award_notes||b.award_notes||'')}" data-field="award_notes" data-bookid="${b.id}"></div>` : ''}
-          <div class="field-row"><label>定價</label><input type="number" value="${esc(ov.list_price||b.list_price||'')}" data-field="list_price" data-bookid="${b.id}"></div>
-          <div class="field-row"><label>單價</label><input type="number" value="${esc(ov.purchase_price||b.purchase_price||'')}" data-field="purchase_price" data-bookid="${b.id}"></div>
-          <button class="btn btn-primary btn-sm" onclick="saveOverrides(${b.id}, this)">儲存修正</button>
-          <button class="btn btn-secondary btn-sm" onclick="toggleEdit(${b.id})">取消</button>
-        </div>
+        ${renderInlineEditForm(b)}
       </div>
     </div>`;
   }).join('');
@@ -686,6 +1104,7 @@ async function addCurrentPage() {
 }
 
 async function addBook(bookId, btn) {
+  if (selMap[bookId] > 0) return;
   const targetBtn = btn || document.getElementById('cta-' + bookId);
   if (targetBtn) targetBtn.disabled = true;
   try {
@@ -695,12 +1114,13 @@ async function addBook(bookId, btn) {
       body: JSON.stringify({ project_id: pid, vendor_book_id: bookId, quantity: 1 })
     });
     await refreshBudget();
+    const qty = selMap[bookId] || 1;
     if (targetBtn) {
       targetBtn.classList.add('selected');
-      targetBtn.textContent = '✓ 已加入（取消）';
-      targetBtn.title = '點擊取消選書';
-      targetBtn.onclick = () => removeBook(bookId, targetBtn);
-      targetBtn.disabled = false;
+      targetBtn.textContent = `✓ 已加入（${qty}本）`;
+      targetBtn.title = LOCKED_CTA_TITLE;
+      targetBtn.onclick = null;
+      targetBtn.disabled = true;
     }
   } catch (e) {
     showToast('加入失敗：' + e.message);
@@ -708,45 +1128,24 @@ async function addBook(bookId, btn) {
   }
 }
 
-async function removeBook(bookId, btn) {
-  const selId = selIdMap[bookId];
-  if (!selId) {
-    await refreshBudget();
-    return;
-  }
-  const targetBtn = btn || document.getElementById('cta-' + bookId);
-  if (targetBtn) targetBtn.disabled = true;
-  try {
-    await api(`/api/selections/${selId}`, { method: 'DELETE' });
-    await refreshBudget();
-    if (targetBtn) {
-      targetBtn.classList.remove('selected');
-      targetBtn.textContent = '＋ 加入選書';
-      targetBtn.title = '';
-      targetBtn.onclick = () => addBook(bookId, targetBtn);
-      targetBtn.disabled = false;
-    }
-    showToast('已取消選書');
-  } catch (e) {
-    showToast('取消失敗：' + e.message);
-    if (targetBtn) targetBtn.disabled = false;
-  }
-}
-
 async function refreshBudget() {
   const selData = await api(`/api/selections/?project_id=${pid}`);
+  currentSelectionItems = selData.items || [];
   selMap = {};
   selIdMap = {};
-  selData.items.forEach(s => {
+  currentSelectionItems.forEach(s => {
     selMap[s.id] = s.selected_quantity;
     selIdMap[s.id] = s.sel_id;
   });
   updateBudgetBar(selData.summary);
+  renderSelectionDistribution(currentSelectionItems);
 }
 
 function toggleEdit(id) {
   const el = document.getElementById('edit-' + id);
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  if (!el) return;
+  const openVal = el.tagName === 'TR' ? 'table-row' : 'block';
+  el.style.display = el.style.display === 'none' ? openVal : 'none';
 }
 
 async function saveOverrides(bookId, btn) {
@@ -774,6 +1173,95 @@ async function saveOverrides(bookId, btn) {
   } catch (e) {
     showToast('儲存失敗：' + e.message);
     if (btn) btn.disabled = false;
+  }
+}
+
+async function openImportProjectsModal() {
+  const modal = document.getElementById('import-projects-modal');
+  const listEl = document.getElementById('import-projects-list');
+  const resultEl = document.getElementById('import-projects-result');
+  const submitBtn = document.getElementById('btn-confirm-import-projects');
+  if (!modal || !listEl) return;
+
+  resultEl.style.display = 'none';
+  resultEl.textContent = '';
+  document.getElementById('import-skip-owned').checked = true;
+  listEl.innerHTML = '<div style="color:#6e6e73;font-size:13px">載入專案中...</div>';
+  submitBtn.disabled = true;
+  modal.style.display = 'flex';
+
+  try {
+    const projects = await api('/api/projects/');
+    const others = (projects || []).filter(p => p.id !== pid);
+    if (!others.length) {
+      listEl.innerHTML = '<div style="color:#6e6e73;font-size:13px">目前沒有其他可匯入的專案。</div>';
+      return;
+    }
+    listEl.innerHTML = others.map(p => {
+      const count = Number(p.selection_count || 0);
+      const metaParts = [
+        p.academic_year ? `${p.academic_year}學年度` : null,
+        projectTypeLabel(p.project_type),
+        `已選 ${count} 筆`,
+        p.is_archived ? '已封存' : null,
+      ].filter(Boolean);
+      return `
+        <label class="modal-project-item" style="${count === 0 ? 'opacity:0.55;cursor:not-allowed' : ''}">
+          <input type="checkbox" class="import-src-project-cb" value="${p.id}" ${count === 0 ? 'disabled' : ''}>
+          <div>
+            <div style="font-weight:600;font-size:14px">${esc(p.name)}</div>
+            <div class="modal-project-meta">${esc(metaParts.join('｜'))}</div>
+          </div>
+        </label>`;
+    }).join('');
+    submitBtn.disabled = !others.some(p => Number(p.selection_count || 0) > 0);
+  } catch (e) {
+    listEl.innerHTML = `<div class="alert alert-error" style="margin:0">載入專案清單失敗：${esc(e.message)}</div>`;
+  }
+}
+
+function closeImportProjectsModal() {
+  const modal = document.getElementById('import-projects-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function submitImportFromProjects(btn) {
+  const checked = Array.from(document.querySelectorAll('.import-src-project-cb:checked'))
+    .map(cb => parseInt(cb.value, 10))
+    .filter(n => !isNaN(n) && n > 0);
+  if (!checked.length) {
+    showToast('請至少勾選一個來源專案');
+    return;
+  }
+
+  const skipOwned = document.getElementById('import-skip-owned').checked;
+  const resultEl = document.getElementById('import-projects-result');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '匯入中…';
+  }
+  try {
+    const res = await api('/api/selections/import-from-projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target_project_id: pid,
+        source_project_ids: checked,
+        skip_already_owned: skipOwned,
+      }),
+    });
+    const summaryMsg = `匯入完成：新增 ${res.added} 本、略過重複 ${res.skipped_duplicate} 本、略過已館藏 ${res.skipped_owned} 本。`;
+    resultEl.textContent = summaryMsg;
+    resultEl.style.display = 'block';
+    showToast(summaryMsg, 3500);
+    await loadData({ preservePage: currentPage });
+  } catch (e) {
+    showToast('匯入失敗：' + e.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '開始匯入';
+    }
   }
 }
 
@@ -873,6 +1361,7 @@ async function clearAll(btn) {
     await api(`/api/selections/?project_id=${pid}`, { method: 'DELETE' });
     selMap = {};
     selIdMap = {};
+    currentSelectionItems = [];
     showToast('已清空選書');
     await loadData();
   } catch (e) {
