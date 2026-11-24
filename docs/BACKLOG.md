@@ -115,7 +115,7 @@
 
 ### 專案資料多樣性與建立體驗優化
 
-- status: planning
+- status: done
 - priority: high
 - type: feat
 - task-id: task-project-diversity-and-form-ux
@@ -126,7 +126,7 @@
   3. 專案管理欄位、採購備忘與結案封存（新增年度 `academic_year`、經費來源 `funding_source`、採購備忘 `project_notes`、結案封存 `is_archived`，預設隱藏已封存專案但保留跨案防重比對）。
   4. 白話計價設定（將 `price_field`／`subtotal_mode` 預設收斂為白話計價基準並保留進階折疊區）與一鍵複製專案設定。
 - decision:
-  已進入 task-planning（`task-project-diversity-and-form-ux`）。
+  已完成並合併至 main。
 
 ## 查詢提示詞範例
 
