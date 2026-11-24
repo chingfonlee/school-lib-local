@@ -113,6 +113,21 @@
 - decision:
   已完成並合併至 main。
 
+### 專案資料多樣性與建立體驗優化
+
+- status: planning
+- priority: high
+- type: feat
+- task-id: task-project-diversity-and-form-ux
+- source: 使用者希望系統不只支援固定 4 種補助類型，也能涵蓋校內自籌／家長會／一般通用採購，並簡化建立專案與跨年度管理體驗
+- description:
+  1. 通用／自訂採購類型（`custom`）與內建通用 Excel 匯出（免上傳空白範本即可產出格式整齊的通用採購書單 `.xlsx`）。
+  2. 採購類型與匯出範本解耦（專案可獨立選擇 `export_template_type`，向後相容既有 4 種範本與內建通用匯出）。
+  3. 專案管理欄位、採購備忘與結案封存（新增年度 `academic_year`、經費來源 `funding_source`、採購備忘 `project_notes`、結案封存 `is_archived`，預設隱藏已封存專案但保留跨案防重比對）。
+  4. 白話計價設定（將 `price_field`／`subtotal_mode` 預設收斂為白話計價基準並保留進階折疊區）與一鍵複製專案設定。
+- decision:
+  已進入 task-planning（`task-project-diversity-and-form-ux`）。
+
 ## 查詢提示詞範例
 
 ```text
