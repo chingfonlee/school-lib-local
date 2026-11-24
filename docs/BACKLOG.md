@@ -103,7 +103,7 @@
 
 ### 階段 3：學校館藏增量匯入與已採購回流
 
-- status: planning
+- status: done
 - priority: medium
 - type: feat
 - task-id: task-holdings-incremental-and-xls-resilience
@@ -111,7 +111,7 @@
 - description:
   館藏匯入支援「全校完整覆蓋」與「增量追加（依 ISBN + 登錄號去重）」雙模式；專案匯出完成後提供一鍵將已採購書目記入待入館／館藏清單；補強 HTML 偽裝 `.xls`、貨幣格式（`NT$`/`元`）與無 ISBN 書目的書名＋作者弱比對提示。
 - decision:
-  已進入 task-planning。
+  已完成並合併至 main。
 
 ## 查詢提示詞範例
 
