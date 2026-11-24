@@ -44,10 +44,14 @@ async def get_matches(
     match_status: str | None = Query(None),
     completeness_status: str | None = Query(None),
     vendor_name: str | None = Query(None),
+    include_missing_isbn: bool = Query(False),
     user_id: int = Depends(require_auth),
 ):
     _ = user_id
-    where_clauses = ["ib.batch_type = 'vendor_books'", "vb.isbn_status = 'valid'"]
+    show_non_valid_isbn = include_missing_isbn or match_status in ("missing_isbn", "invalid_isbn")
+    where_clauses = ["ib.batch_type = 'vendor_books'"]
+    if not show_non_valid_isbn:
+        where_clauses.append("vb.isbn_status = 'valid'")
     params: list[Any] = [DEFAULT_VENDOR_NAME]
 
     if vendor_name is not None and vendor_name.strip():
@@ -285,6 +289,16 @@ async def get_stats(
             vendor_params,
         ).fetchone()[0]
 
+        missing_isbn_similar_count = conn.execute(
+            "SELECT COUNT(DISTINCT bm.vendor_book_id) "
+            "FROM book_matches bm "
+            "JOIN vendor_books vb ON vb.id = bm.vendor_book_id "
+            "JOIN import_batches ib ON ib.id = vb.batch_id "
+            f"WHERE ib.batch_type = 'vendor_books' AND vb.isbn_status IN ('missing', 'invalid'){vendor_filter_sql} "
+            "AND bm.match_status = 'same_title_different_isbn'",
+            vendor_params,
+        ).fetchone()[0]
+
         other_project_duplicate_count = conn.execute(
             "SELECT COUNT(*) "
             "FROM vendor_books vb "
@@ -309,6 +323,7 @@ async def get_stats(
         "match_status": {r["match_status"]: r["cnt"] for r in match_rows},
         "completeness_status": dict(comp_counter),
         "same_title_different_isbn_count": same_title_different_isbn_count,
+        "missing_isbn_similar_count": missing_isbn_similar_count,
         "other_project_duplicate_count": other_project_duplicate_count,
     }
 
