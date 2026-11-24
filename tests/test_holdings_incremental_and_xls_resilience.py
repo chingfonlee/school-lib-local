@@ -376,6 +376,40 @@ def test_html_disguised_xls_utf8_and_cp950_across_import_flows(tmp_path: Path, m
     assert h_res["sheet_summaries"][0]["sheet_name"] == "Table 2"
 
 
+def test_html_disguised_xls_duplicate_headers_deduplicated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _setup_migrated_db(tmp_path, monkeypatch)
+    pid = _create_project("重複表頭HTML測試")
+
+    html_dup = """<html><body>
+<table>
+  <tr><th>書名</th><th>條碼</th><th>備註</th><th>備註</th><th>備註</th></tr>
+  <tr><td>重複表頭測試書</td><td>9789573283002</td><td>第一欄備註</td><td>第二欄備註</td><td>第三欄備註</td></tr>
+</table>
+</body></html>
+""".encode("utf-8")
+
+    prev = import_service.preview_excel(html_dup, "dup_headers.xls")
+    assert prev["source_columns"] == ["書名", "條碼", "備註", "備註.1", "備註.2"]
+
+    res = import_service.confirm_import(
+        html_dup,
+        "dup_headers.xls",
+        project_id=pid,
+        sheet_name="Table 1",
+        header_row=0,
+        mappings={"title": "書名", "isbn": "條碼", "award_notes": "備註"},
+        extra_field_settings=["備註.1", "備註.2"],
+        user_id=1,
+        vendor_name="重複表頭書商",
+    )
+    assert res["record_count"] == 1
+    with db.db_session() as conn:
+        row = conn.execute("SELECT title, award_notes, extra_fields FROM vendor_books").fetchone()
+    assert row["title"] == "重複表頭測試書"
+    assert row["award_notes"] == "第一欄備註"
+    assert json.loads(row["extra_fields"]) == {"備註.1": "第二欄備註", "備註.2": "第三欄備註"}
+
+
 # ── 4. _to_float currency tolerance ──────────────────────────────────────────
 
 

@@ -265,7 +265,17 @@ def _read_raw_sheet(
             return pd.DataFrame()
 
         raw_header = padded[header_idx]
-        columns = [cell if cell else f"Unnamed: {i}" for i, cell in enumerate(raw_header)]
+        columns: list[str] = []
+        seen_cols: set[str] = set()
+        for i, cell in enumerate(raw_header):
+            base = cell if cell else f"Unnamed: {i}"
+            col_name = base
+            suffix = 1
+            while col_name in seen_cols:
+                col_name = f"{base}.{suffix}"
+                suffix += 1
+            seen_cols.add(col_name)
+            columns.append(col_name)
         data_rows = padded[header_idx + 1 :]
         if nrows is not None:
             data_rows = data_rows[:nrows]
@@ -1072,15 +1082,10 @@ def commit_project_selections_to_holdings(project_id: int, user_id: int) -> dict
             raise ValueError("本專案尚無已選購書目，無法記入館藏")
 
         existing_rows = conn.execute(
-            "SELECT isbn_normalized, library_record_id FROM library_holdings "
+            "SELECT library_record_id FROM library_holdings "
             "WHERE library_record_id IS NOT NULL AND TRIM(library_record_id) != ''"
         ).fetchall()
-        existing_record_ids: set[str] = set()
-        existing_isbn_rid: set[tuple[str, str]] = set()
-        for r in existing_rows:
-            rid = str(r["library_record_id"]).strip()
-            existing_record_ids.add(rid)
-            existing_isbn_rid.add((r["isbn_normalized"] or "", rid))
+        existing_record_ids: set[str] = {str(r["library_record_id"]).strip() for r in existing_rows}
 
         rows_to_insert: list[tuple] = []
         skipped_count = 0
@@ -1119,12 +1124,11 @@ def commit_project_selections_to_holdings(project_id: int, user_id: int) -> dict
                 price = _to_float(_pick("list_price"))
 
             library_record_id = f"PO-{project_id}-{si['id']}"
-            if library_record_id in existing_record_ids or (isbn_norm or "", library_record_id) in existing_isbn_rid:
+            if library_record_id in existing_record_ids:
                 skipped_count += 1
                 continue
 
             existing_record_ids.add(library_record_id)
-            existing_isbn_rid.add((isbn_norm or "", library_record_id))
 
             raw_row = json.dumps(
                 {
