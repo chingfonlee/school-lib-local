@@ -26,7 +26,10 @@
 <div class="page container">
   <div class="section-header">
     <div><h1>比對結果</h1><p class="subtitle" id="project-label">目前專案：載入中...</p></div>
-    <div class="right"><button class="btn btn-secondary" onclick="runMatch()">重新比對</button></div>
+    <div class="right" style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-secondary" onclick="runMatch(this)">重新比對</button>
+      <a href="/selection.html" class="btn btn-primary">前往選書 →</a>
+    </div>
   </div>
 
   <div class="stats-row" id="stats-row"></div>
@@ -68,14 +71,15 @@
 let pid = null;
 
 requireAuth().then(async () => {
-  pid = getProjectId();
-  if (!pid) { showToast('請先選擇採購專案'); return; }
+  pid = requireProject();
+  if (!pid) return;
   let proj;
   try {
     proj = await api(`/api/projects/${pid}`);
   } catch {
     clearProject();
-    showToast('請先選擇採購專案');
+    pid = null;
+    requireProject();
     return;
   }
   document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
@@ -84,56 +88,69 @@ requireAuth().then(async () => {
 });
 
 async function loadStats() {
-  const s = await api(`/api/books/stats?project_id=${pid}`);
-  const ms = s.match_status || {};
-  const cs = s.completeness_status || {};
-  document.getElementById('stats-row').innerHTML = `
-    <div class="stat-card green"><div class="num">${ms.available||0}</div><div class="label">可採購</div></div>
-    <div class="stat-card gray"><div class="num">${ms.already_owned||0}</div><div class="label">已館藏</div></div>
-    <div class="stat-card gray"><div class="num">${s.ignored_missing_isbn||0}</div><div class="label">已忽略缺ISBN</div></div>
-    <div class="stat-card green"><div class="num">${cs.export_ready||0}</div><div class="label">可匯出</div></div>
-    <div class="stat-card yellow"><div class="num">${cs.needs_review||0}</div><div class="label">需補資料</div></div>
-    <div class="stat-card red"><div class="num">${cs.missing_required||0}</div><div class="label">缺必填</div></div>
-  `;
+  try {
+    const s = await api(`/api/books/stats?project_id=${pid}`);
+    const ms = s.match_status || {};
+    const cs = s.completeness_status || {};
+    document.getElementById('stats-row').innerHTML = `
+      <div class="stat-card green"><div class="num">${ms.available||0}</div><div class="label">可採購</div></div>
+      <div class="stat-card gray"><div class="num">${ms.already_owned||0}</div><div class="label">已館藏</div></div>
+      <div class="stat-card gray"><div class="num">${s.ignored_missing_isbn||0}</div><div class="label">已忽略缺ISBN</div></div>
+      <div class="stat-card green"><div class="num">${cs.export_ready||0}</div><div class="label">可匯出</div></div>
+      <div class="stat-card yellow"><div class="num">${cs.needs_review||0}</div><div class="label">需補資料</div></div>
+      <div class="stat-card red"><div class="num">${cs.missing_required||0}</div><div class="label">缺必填</div></div>
+    `;
+  } catch (e) {
+    document.getElementById('stats-row').innerHTML = `<div class="alert alert-error">無法載入統計：${esc(e.message)}</div>`;
+  }
 }
 
 async function loadBooks() {
+  if (!pid) return;
+  const tbody = document.getElementById('book-body');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:40px">載入中...</td></tr>';
   const ms = document.getElementById('filter-match').value;
   const cs = document.getElementById('filter-comp').value;
   let url = `/api/books/matches?project_id=${pid}`;
-  if (ms) url += `&match_status=${ms}`;
-  if (cs) url += `&completeness_status=${cs}`;
-  const books = await api(url);
+  if (ms) url += `&match_status=${encodeURIComponent(ms)}`;
+  if (cs) url += `&completeness_status=${encodeURIComponent(cs)}`;
+  let books;
+  try {
+    books = await api(url);
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#c0392b;padding:40px">載入失敗：${esc(e.message)}</td></tr>`;
+    return;
+  }
   document.getElementById('result-count').textContent = `共 ${books.length} 筆`;
-  const tbody = document.getElementById('book-body');
   if (!books.length) {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:40px">無資料</td></tr>';
     return;
   }
   tbody.innerHTML = books.map(b => {
-    const overrides = JSON.parse(b.user_overrides || '{}');
+    const overrides = safeParseJson(b.user_overrides, {});
     const title = overrides.title || b.title || '—';
     const author = overrides.author || b.author || '—';
     const publisher = overrides.publisher || b.publisher || '—';
     const isbn = b.isbn_normalized || b.isbn || '—';
     const award = overrides.award_item || b.award_item || '—';
     return `<tr>
-      <td>${title}</td>
-      <td>${author}</td>
-      <td>${publisher}</td>
-      <td style="font-size:12px">${isbn}</td>
-      <td style="font-size:12px;max-width:160px;white-space:normal">${award}</td>
+      <td>${esc(title)}</td>
+      <td>${esc(author)}</td>
+      <td>${esc(publisher)}</td>
+      <td style="font-size:12px">${esc(isbn)}</td>
+      <td style="font-size:12px;max-width:160px;white-space:normal">${esc(award)}</td>
       <td>${badge(b.match_status || 'unknown')}</td>
       <td>${badge(b.completeness_status || 'unknown')}</td>
     </tr>`;
   }).join('');
 }
 
-async function runMatch() {
+async function runMatch(btn) {
   if (!pid) return;
-  const btn = event.target;
-  btn.disabled = true;
-  btn.textContent = '比對中...';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '比對中...';
+  }
   try {
     const stats = await api('/api/books/run-match', {
       method: 'POST',
@@ -146,8 +163,10 @@ async function runMatch() {
   } catch (e) {
     showToast('比對失敗：' + e.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = '重新比對';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '重新比對';
+    }
   }
 }
 </script>

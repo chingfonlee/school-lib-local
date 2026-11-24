@@ -43,9 +43,9 @@
   <p class="subtitle" id="project-label">目前專案：載入中...</p>
 
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('holdings',this)">學校館藏</button>
-    <button class="tab-btn" onclick="switchTab('vendor',this)">書商書單</button>
-    <button class="tab-btn" onclick="switchTab('history',this)">匯入紀錄</button>
+    <button class="tab-btn active" id="tab-btn-holdings" onclick="switchTab('holdings',this)">學校館藏</button>
+    <button class="tab-btn" id="tab-btn-vendor" onclick="switchTab('vendor',this)">書商書單</button>
+    <button class="tab-btn" id="tab-btn-history" onclick="switchTab('history',this)">匯入紀錄</button>
   </div>
 
   <!-- 館藏 -->
@@ -55,19 +55,19 @@
       <div class="icon">📁</div>
       <div>點擊或拖曳上傳 <strong>學校館藏 .xls</strong></div>
       <div class="hint">最大 50MB</div>
-      <input type="file" id="holdings-file" accept=".xls,.xlsx" onchange="uploadHoldings(this.files[0])">
+      <input type="file" id="holdings-file" accept=".xls,.xlsx" onchange="uploadHoldings(this.files[0]);this.value='';">
     </div>
     <div id="holdings-result" style="margin-top:16px"></div>
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid #ffd2d2">
       <p style="font-size:13px;color:#6e6e73;margin:0 0 8px">危險操作：清除後館藏比對結果失效，需重新匯入並重新執行比對。</p>
-      <button class="btn" style="background:#dc3545;color:#fff;border:none;cursor:pointer" onclick="clearHoldings()">清除學校館藏</button>
+      <button class="btn" id="clear-holdings-btn" style="background:#dc3545;color:#fff;border:none;cursor:pointer" onclick="clearHoldings()">清除學校館藏</button>
       <div id="holdings-clear-result" style="margin-top:12px"></div>
     </div>
   </div>
 
   <!-- 書商書單 wizard -->
   <div id="tab-vendor" class="tab-panel">
-    <div id="vendor-alert" class="alert alert-warn" style="display:none">請先選擇採購專案後再匯入書商書單。</div>
+    <div id="vendor-alert" class="alert alert-warn" style="display:none">請先前往 <a href="/projects.html" style="font-weight:600;text-decoration:underline;color:inherit">採購專案</a> 選擇專案後再匯入書商書單。</div>
 
     <div class="wizard-bar" id="vendor-wizard-bar">
       <div class="wstep active" id="ws-A">A&nbsp;上傳</div>
@@ -84,7 +84,7 @@
         <div class="icon">📚</div>
         <div>點擊或拖曳上傳 <strong>書商書單 .xlsx</strong></div>
         <div class="hint">最大 50MB</div>
-        <input type="file" id="vendor-file" accept=".xlsx,.xls" onchange="handleFileUpload(this.files[0])">
+        <input type="file" id="vendor-file" accept=".xlsx,.xls" onchange="handleFileUpload(this.files[0]);this.value='';">
       </div>
       <div id="step-A-status" style="margin-top:12px"></div>
     </div>
@@ -101,7 +101,7 @@
           <label>標題列（第幾列）</label>
           <input type="number" id="header-row-input" min="1" max="30" value="1" style="width:80px">
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="refreshPreview()">更新預覽</button>
+        <button class="btn btn-secondary btn-sm" id="refresh-preview-btn" onclick="refreshPreview()">更新預覽</button>
       </div>
       <div id="step-B-status" style="font-size:13px;color:#6e6e73;min-height:20px;margin-bottom:12px"></div>
       <button class="btn btn-primary" onclick="goToStep('C')">下一步 →</button>
@@ -141,6 +141,7 @@
     <!-- 步驟 E -->
     <div id="step-E" class="wizard-step" style="display:none">
       <h3 style="margin:0 0 12px">確認並正式匯入</h3>
+      <div class="alert alert-warn" style="margin-bottom:12px">注意：若本專案先前已匯入過書商書單，本次匯入將會取代本專案既有的書商書單（已選書紀錄會保留）。</div>
       <div class="card" style="background:#f5f5f7;padding:16px;margin-bottom:16px">
         <dl class="summary-dl" id="import-summary"></dl>
       </div>
@@ -154,14 +155,15 @@
         </div>
       </div>
       <div id="step-E-result" style="margin-bottom:12px"></div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-secondary" onclick="goToStep('D')">← 上一步</button>
         <button class="btn btn-primary" id="confirm-btn" onclick="doConfirmImport()">確認匯入</button>
+        <button class="btn btn-secondary" id="reset-wizard-btn" style="display:none" onclick="resetVendorWizard()">匯入另一份書單</button>
       </div>
     </div>
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid #ffd2d2">
       <p style="font-size:13px;color:#6e6e73;margin:0 0 8px">危險操作：僅清除書商書單來源資料，已選書紀錄不受影響。</p>
-      <button class="btn" style="background:#dc3545;color:#fff;border:none;cursor:pointer" onclick="clearVendorBooks()">清除目前專案書商書單</button>
+      <button class="btn" id="clear-vendor-btn" style="background:#dc3545;color:#fff;border:none;cursor:pointer" onclick="clearVendorBooks()">清除目前專案書商書單</button>
       <div id="vendor-clear-result" style="margin-top:12px"></div>
     </div>
   </div>
@@ -200,6 +202,10 @@ function formatImportError(message, context) {
 let pid = null;
 let wizardFile = null;
 let previewData = null;
+let currentWizardStep = 'A';
+let savedMappings = null;
+let savedExtraFields = null;
+let hasExistingHoldings = false;
 
 const SYSTEM_FIELDS = [
   {key:'title',         label:'書名',     required:true},
@@ -238,12 +244,27 @@ requireAuth().then(async () => {
     el.textContent = '尚未選擇採購專案';
     document.getElementById('vendor-alert').style.display = 'block';
   }
+
+  try {
+    const batches = await api('/api/imports/batches');
+    hasExistingHoldings = batches.some(b => b.batch_type === 'library_holdings' && (b.record_count || 0) > 0);
+  } catch {
+    hasExistingHoldings = false;
+  }
+
+  const requestedTab = new URLSearchParams(window.location.search).get('tab');
+  if (requestedTab === 'vendor' || requestedTab === 'history' || requestedTab === 'holdings') {
+    switchTab(requestedTab);
+  } else if (hasExistingHoldings && pid) {
+    switchTab('vendor');
+  }
 });
 
 function switchTab(name, btn) {
+  const targetBtn = btn || document.getElementById('tab-btn-' + name);
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  btn.classList.add('active');
+  if (targetBtn) targetBtn.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'history') loadHistory();
 }
@@ -264,22 +285,26 @@ function switchTab(name, btn) {
 
 async function uploadHoldings(file) {
   if (!file) return;
+  if (hasExistingHoldings && !confirm('系統已有學校館藏資料，重新匯入將會覆蓋既有館藏並重新比對。確定要繼續嗎？')) {
+    return;
+  }
   const el = document.getElementById('holdings-result');
   el.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> 匯入中...</div>';
   const fd = new FormData();
   fd.append('file', file);
   try {
     const result = await api('/api/imports/holdings', { method: 'POST', body: fd });
+    hasExistingHoldings = true;
     const replaced = result.replaced ? '已覆蓋既有館藏，' : '';
     let sheetInfo = '';
     if (result.sheet_summaries && result.sheet_summaries.length >= 1) {
       sheetInfo = '<br>各工作表：' + result.sheet_summaries
-        .map(s => `${s.sheet_name}（${s.record_count} 筆）`).join('、');
+        .map(s => `${esc(s.sheet_name)}（${s.record_count} 筆）`).join('、');
     }
     let skippedInfo = '';
     if (result.skipped_sheets && result.skipped_sheets.length) {
       skippedInfo = '<br>略過工作表：' + result.skipped_sheets
-        .map(s => s.sheet_name).join('、');
+        .map(s => esc(s.sheet_name)).join('、');
     }
     let matchInfo = '';
     if (result.match_rerun_error) {
@@ -290,18 +315,28 @@ async function uploadHoldings(file) {
     el.innerHTML = `
       <div class="alert alert-success">
         ✓ ${replaced}共 <strong>${result.record_count}</strong> 筆
-        ${result.unmapped_fields && result.unmapped_fields.length ? `<br>未對應欄位：${result.unmapped_fields.join('、')}` : ''}
+        ${result.unmapped_fields && result.unmapped_fields.length ? `<br>未對應欄位：${esc(result.unmapped_fields.join('、'))}` : ''}
         ${sheetInfo}${skippedInfo}${matchInfo}
       </div>
-      <p style="margin-top:10px;font-size:14px"><a href="/match.html">前往比對結果 →</a></p>`;
+      <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <button type="button" class="btn btn-primary btn-sm" onclick="switchTab('vendor')">下一步：匯入書商書單 →</button>
+        <a href="/match.html" class="btn btn-secondary btn-sm">前往比對結果 →</a>
+      </div>`;
     showToast('館藏匯入完成');
   } catch (e) {
-    el.innerHTML = `<div class="alert alert-error">${formatImportError(e.message, 'holdings')}</div>`;
+    el.innerHTML = `<div class="alert alert-error">${esc(formatImportError(e.message, 'holdings'))}</div>`;
   }
 }
 
 /* ── wizard ── */
 function goToStep(step) {
+  if (currentWizardStep === 'C' && document.getElementById('mapping-body').children.length > 0) {
+    savedMappings = getMappings();
+  }
+  if (currentWizardStep === 'D' && previewData) {
+    savedExtraFields = getExtraFields();
+  }
+  currentWizardStep = step;
   const order = ['A','B','C','D','E'];
   order.forEach(s => {
     document.getElementById('step-' + s).style.display = (s === step) ? '' : 'none';
@@ -315,20 +350,34 @@ function goToStep(step) {
   if (step === 'E') renderSummary();
 }
 
+function resetVendorWizard() {
+  wizardFile = null;
+  previewData = null;
+  savedMappings = null;
+  savedExtraFields = null;
+  document.getElementById('vendor-file').value = '';
+  document.getElementById('step-A-status').innerHTML = '';
+  document.getElementById('step-E-result').innerHTML = '';
+  document.getElementById('reset-wizard-btn').style.display = 'none';
+  goToStep('A');
+}
+
 async function handleFileUpload(file) {
   if (!file) return;
   if (!pid) { showToast('請先選擇採購專案'); return; }
   wizardFile = file;
+  savedMappings = null;
+  savedExtraFields = null;
   document.getElementById('step-A-status').innerHTML =
     '<div class="alert alert-info"><span class="spinner"></span> 讀取檔案中...</div>';
   try {
     await callPreview(null, null);
     document.getElementById('step-A-status').innerHTML =
-      `<div class="alert alert-success">✓ 已讀取：${file.name}</div>`;
+      `<div class="alert alert-success">✓ 已讀取：${esc(file.name)}</div>`;
     goToStep('B');
   } catch (e) {
     document.getElementById('step-A-status').innerHTML =
-      `<div class="alert alert-error">${formatImportError(e.message, 'vendor-preview')}</div>`;
+      `<div class="alert alert-error">${esc(formatImportError(e.message, 'vendor-preview'))}</div>`;
     wizardFile = null;
   }
 }
@@ -339,10 +388,12 @@ async function callPreview(sheetName, headerRow0) {
   if (sheetName) fd.append('sheet_name', sheetName);
   if (headerRow0 !== null && headerRow0 !== undefined) fd.append('header_row', headerRow0);
   previewData = await api('/api/imports/vendor-books/preview', { method: 'POST', body: fd });
+  savedMappings = null;
+  savedExtraFields = null;
 
   const sel = document.getElementById('sheet-select');
   sel.innerHTML = (previewData.sheets || []).map(s =>
-    `<option value="${s}"${s === previewData.active_sheet ? ' selected' : ''}>${s}</option>`
+    `<option value="${esc(s)}"${s === previewData.active_sheet ? ' selected' : ''}>${esc(s)}</option>`
   ).join('');
   document.getElementById('header-row-input').value = previewData.guessed_header_row + 1;
   document.getElementById('step-B-status').textContent =
@@ -351,13 +402,17 @@ async function callPreview(sheetName, headerRow0) {
 
 async function refreshPreview() {
   if (!wizardFile) return;
+  const btn = document.getElementById('refresh-preview-btn');
   const sheetName = document.getElementById('sheet-select').value;
   const hr1 = parseInt(document.getElementById('header-row-input').value) || 1;
+  btn.disabled = true;
   document.getElementById('step-B-status').textContent = '更新中...';
   try {
     await callPreview(sheetName, hr1 - 1);
   } catch (e) {
     document.getElementById('step-B-status').textContent = formatImportError(e.message, 'vendor-preview');
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -366,13 +421,15 @@ function renderMappingTable() {
   const cols = ['', ...previewData.source_columns];
   const tbody = document.getElementById('mapping-body');
   tbody.innerHTML = SYSTEM_FIELDS.map(f => {
-    const suggested = previewData.suggested_mappings[f.key] || '';
+    const selected = savedMappings !== null
+      ? (savedMappings[f.key] || '')
+      : (previewData.suggested_mappings[f.key] || '');
     const opts = cols.map(c =>
-      `<option value="${c}"${c === suggested ? ' selected' : ''}>${c || '— 未對應 —'}</option>`
+      `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c) || '— 未對應 —'}</option>`
     ).join('');
     return `<tr>
-      <td>${f.label}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}</td>
-      <td><select id="map-${f.key}">${opts}</select></td>
+      <td>${esc(f.label)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}</td>
+      <td><select id="map-${esc(f.key)}">${opts}</select></td>
     </tr>`;
   }).join('');
 }
@@ -387,9 +444,11 @@ function renderExtraFields() {
     empty.style.display = '';
   } else {
     empty.style.display = 'none';
-    list.innerHTML = extras.map(col =>
-      `<label><input type="checkbox" name="extra-field" value="${col}" checked> ${col}</label>`
-    ).join('');
+    const checkedSet = savedExtraFields !== null ? new Set(savedExtraFields) : null;
+    list.innerHTML = extras.map(col => {
+      const isChecked = checkedSet === null ? true : checkedSet.has(col);
+      return `<label><input type="checkbox" name="extra-field" value="${esc(col)}"${isChecked ? ' checked' : ''}> ${esc(col)}</label>`;
+    }).join('');
   }
 }
 
@@ -409,6 +468,7 @@ function getExtraFields() {
 
 function validateAndGoD() {
   const m = getMappings();
+  savedMappings = m;
   const missing = SYSTEM_FIELDS.filter(f => f.required && !m[f.key]).map(f => f.label);
   const warn = document.getElementById('step-C-warning');
   if (missing.length) {
@@ -430,14 +490,15 @@ function renderSummary() {
     return `${f ? f.label : sys}→${src}`;
   }).join('、');
   document.getElementById('import-summary').innerHTML = `
-    <dt>工作表</dt><dd>${sheetName}</dd>
-    <dt>標題列</dt><dd>第 ${hr1} 列</dd>
-    <dt>欄位對應</dt><dd style="word-break:break-all">${mapDesc || '（無）'}</dd>
-    <dt>額外欄位</dt><dd>${extras.length ? extras.join('、') : '（無）'}</dd>
+    <dt>工作表</dt><dd>${esc(sheetName)}</dd>
+    <dt>標題列</dt><dd>第 ${esc(hr1)} 列</dd>
+    <dt>欄位對應</dt><dd style="word-break:break-all">${esc(mapDesc) || '（無）'}</dd>
+    <dt>額外欄位</dt><dd>${extras.length ? esc(extras.join('、')) : '（無）'}</dd>
   `;
   document.getElementById('step-E-result').innerHTML = '';
   document.getElementById('confirm-btn').disabled = false;
   document.getElementById('confirm-btn').textContent = '確認匯入';
+  document.getElementById('reset-wizard-btn').style.display = 'none';
 }
 
 function toggleProfileName() {
@@ -489,18 +550,26 @@ async function doConfirmImport() {
         <a href="/selection.html">前往選書 →</a>
       </p>`;
     btn.textContent = '已匯入';
+    document.getElementById('reset-wizard-btn').style.display = '';
     showToast('書單匯入完成');
   } catch (e) {
     document.getElementById('step-E-result').innerHTML =
-      `<div class="alert alert-error">${formatImportError(e.message, 'vendor-confirm')}</div>`;
+      `<div class="alert alert-error">${esc(formatImportError(e.message, 'vendor-confirm'))}</div>`;
     btn.disabled = false;
     btn.textContent = '確認匯入';
   }
 }
 
 async function loadHistory() {
-  const batches = await api(pid ? `/api/imports/batches?project_id=${pid}` : '/api/imports/batches');
   const el = document.getElementById('batch-list');
+  el.innerHTML = '<p style="color:#999">載入中...</p>';
+  let batches;
+  try {
+    batches = await api(pid ? `/api/imports/batches?project_id=${pid}` : '/api/imports/batches');
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error">無法載入匯入紀錄：${esc(e.message)}</div>`;
+    return;
+  }
   if (!batches.length) {
     el.innerHTML = '<div class="empty"><div class="icon">📋</div><p>尚無匯入紀錄</p></div>';
     return;
@@ -509,10 +578,10 @@ async function loadHistory() {
     <thead><tr><th>檔名</th><th>類型</th><th>筆數</th><th>匯入時間</th></tr></thead>
     <tbody>${batches.map(b => `
       <tr>
-        <td>${b.original_filename}</td>
+        <td>${esc(b.original_filename)}</td>
         <td>${b.batch_type === 'library_holdings' ? '館藏' : '書商書單'}</td>
         <td>${b.record_count || '—'}</td>
-        <td>${new Date(b.imported_at).toLocaleString('zh-TW')}</td>
+        <td>${esc(new Date(b.imported_at).toLocaleString('zh-TW'))}</td>
       </tr>`).join('')}
     </tbody></table></div>`;
 }
@@ -521,14 +590,19 @@ async function clearHoldings() {
   if (!confirm('確定要清除所有學校館藏資料？此操作無法復原。')) return;
   const input = prompt('請輸入「清除」以確認：');
   if (input !== '清除') return;
+  const btn = document.getElementById('clear-holdings-btn');
   const el = document.getElementById('holdings-clear-result');
+  btn.disabled = true;
   el.innerHTML = '<span style="color:#6e6e73">清除中...</span>';
   try {
     const result = await api('/api/imports/holdings', { method: 'DELETE' });
+    hasExistingHoldings = false;
     el.innerHTML = `<div class="alert alert-success">已清除：館藏 ${result.deleted_holdings} 筆、比對紀錄 ${result.deleted_matches} 筆、匯入批次 ${result.deleted_batches} 筆。</div>`;
     loadHistory();
   } catch (e) {
-    el.innerHTML = `<div class="alert alert-error">清除失敗：${e.message || e}</div>`;
+    el.innerHTML = `<div class="alert alert-error">清除失敗：${esc(e.message || e)}</div>`;
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -540,14 +614,18 @@ async function clearVendorBooks() {
   if (!confirm('確定要清除目前專案的書商書單來源資料？此操作無法復原。已選書紀錄將保留。')) return;
   const input = prompt('請輸入「清除」以確認：');
   if (input !== '清除') return;
+  const btn = document.getElementById('clear-vendor-btn');
   const el = document.getElementById('vendor-clear-result');
+  btn.disabled = true;
   el.innerHTML = '<span style="color:#6e6e73">清除中...</span>';
   try {
     const result = await api(`/api/imports/vendor-books?project_id=${pid}`, { method: 'DELETE' });
     el.innerHTML = `<div class="alert alert-success">已清除：書商書單 ${result.deleted_vendor_books} 筆、比對紀錄 ${result.deleted_matches} 筆、匯入批次 ${result.deleted_batches} 筆。已選書紀錄保留 ${result.preserved_selection_items} 筆。</div>`;
     loadHistory();
   } catch (e) {
-    el.innerHTML = `<div class="alert alert-error">清除失敗：${e.message || e}</div>`;
+    el.innerHTML = `<div class="alert alert-error">清除失敗：${esc(e.message || e)}</div>`;
+  } finally {
+    btn.disabled = false;
   }
 }
 </script>
