@@ -122,7 +122,7 @@
       <p>即將刪除專案：<strong id="delete-project-name"></strong></p>
       <div id="delete-stats"></div>
       <div id="delete-current-warning" class="alert alert-warn" style="display:none;margin-top:8px">⚠ 這是目前使用中的專案。刪除後系統會清除目前使用狀態，請重新選擇專案。</div>
-      <p style="color:#c0392b;font-size:13px;margin-top:8px">⚠ 刪除後無法復原，建議先備份資料庫。與此專案相關的所有資料（書目、選書、匯出紀錄）將永久刪除。</p>
+      <p style="color:#c0392b;font-size:13px;margin-top:8px">⚠ 刪除後無法復原，建議先備份資料庫。僅會刪除本專案的選書與匯出紀錄，全校共用書商書單庫會完整保留。</p>
       <div style="display:flex;gap:8px;margin-top:16px">
         <button id="delete-confirm-btn" class="btn btn-danger">確認刪除</button>
         <button class="btn btn-secondary" onclick="closeDeleteModal()">取消</button>
@@ -357,9 +357,8 @@ async function confirmDelete(event, id) {
     <ul style="margin:8px 0;padding-left:20px;color:#555;font-size:14px">
       <li>選書項目：${preview.selection_count} 筆</li>
       <li>匯出記錄：${preview.export_job_count} 筆</li>
-      <li>匯入批次：${preview.import_batch_count} 批</li>
-      <li>書商書目：${preview.vendor_book_count} 筆</li>
-      <li>館藏紀錄：${preview.holding_count} 筆</li>
+      ${preview.holding_count > 0 ? `<li>專案綁定館藏紀錄：${preview.holding_count} 筆</li>` : ''}
+      <li>全校共用書商書單庫：<strong>保留（不會刪除）</strong></li>
     </ul>`;
   document.getElementById('delete-current-warning').style.display = getProjectId() == id ? 'block' : 'none';
   document.getElementById('delete-confirm-btn').onclick = () => doDelete(id);

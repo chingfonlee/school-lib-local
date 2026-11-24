@@ -35,6 +35,10 @@
   <div class="stats-row" id="stats-row"></div>
 
   <div class="filter-bar">
+    <label>書商：</label>
+    <select id="filter-vendor" onchange="onVendorFilterChange()">
+      <option value="">全部書商</option>
+    </select>
     <label>比對狀態：</label>
     <select id="filter-match" onchange="loadBooks()">
       <option value="">全部</option>
@@ -58,7 +62,7 @@
       <table id="book-table">
         <thead>
           <tr>
-            <th>書名</th><th>作者</th><th>出版社</th><th>ISBN</th>
+            <th>書商</th><th>書名</th><th>作者</th><th>出版社</th><th>ISBN</th>
             <th>獲獎項目</th><th>比對狀態</th><th>完整度</th>
           </tr>
         </thead>
@@ -85,13 +89,35 @@ requireAuth().then(async () => {
     return;
   }
   document.getElementById('project-label').textContent = `目前專案：${proj.name}`;
+  await loadVendors();
   await loadStats();
   await loadBooks();
 });
 
+async function loadVendors() {
+  try {
+    const vendors = await api('/api/imports/vendors');
+    const sel = document.getElementById('filter-vendor');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">全部書商</option>' +
+      (vendors || []).map(v =>
+        `<option value="${esc(v.vendor_name)}">${esc(v.vendor_name)}（${Number(v.book_count) || 0}）</option>`
+      ).join('');
+    if (cur) sel.value = cur;
+  } catch {}
+}
+
+async function onVendorFilterChange() {
+  await loadStats();
+  await loadBooks();
+}
+
 async function loadStats() {
   try {
-    const s = await api(`/api/books/stats?project_id=${pid}`);
+    const vn = document.getElementById('filter-vendor').value;
+    let url = `/api/books/stats?project_id=${pid}`;
+    if (vn) url += `&vendor_name=${encodeURIComponent(vn)}`;
+    const s = await api(url);
     const ms = s.match_status || {};
     const cs = s.completeness_status || {};
     document.getElementById('stats-row').innerHTML = `
@@ -125,8 +151,16 @@ function renderMatchStatusCell(b) {
   }
 
   if (Array.isArray(b.other_project_selections) && b.other_project_selections.length > 0) {
-    const names = b.other_project_selections.map(p => esc(p.project_name || '')).filter(Boolean).join('、');
-    html += `<div class="dup-note dup-note-other-project"><span class="badge badge-other-project">他案已選</span> ${names}</div>`;
+    const exported = b.other_project_selections.filter(p => p.has_exported);
+    const selecting = b.other_project_selections.filter(p => !p.has_exported);
+    if (exported.length > 0) {
+      const names = exported.map(p => esc(p.project_name || '')).filter(Boolean).join('、');
+      html += `<div class="dup-note dup-note-other-project"><span class="badge badge-other-exported">他案已匯出</span> ${names}</div>`;
+    }
+    if (selecting.length > 0) {
+      const names = selecting.map(p => esc(p.project_name || '')).filter(Boolean).join('、');
+      html += `<div class="dup-note dup-note-other-project"><span class="badge badge-other-project">他案選書中</span> ${names}</div>`;
+    }
   }
 
   return html;
@@ -135,32 +169,36 @@ function renderMatchStatusCell(b) {
 async function loadBooks() {
   if (!pid) return;
   const tbody = document.getElementById('book-body');
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:40px">載入中...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;padding:40px">載入中...</td></tr>';
+  const vn = document.getElementById('filter-vendor').value;
   const ms = document.getElementById('filter-match').value;
   const cs = document.getElementById('filter-comp').value;
   let url = `/api/books/matches?project_id=${pid}`;
+  if (vn) url += `&vendor_name=${encodeURIComponent(vn)}`;
   if (ms) url += `&match_status=${encodeURIComponent(ms)}`;
   if (cs) url += `&completeness_status=${encodeURIComponent(cs)}`;
   let books;
   try {
     books = await api(url);
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#c0392b;padding:40px">載入失敗：${esc(e.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#c0392b;padding:40px">載入失敗：${esc(e.message)}</td></tr>`;
     return;
   }
   document.getElementById('result-count').textContent = `共 ${books.length} 筆`;
   if (!books.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:40px">無資料</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;padding:40px">無資料</td></tr>';
     return;
   }
   tbody.innerHTML = books.map(b => {
     const overrides = safeParseJson(b.user_overrides, {});
+    const vendorName = b.vendor_name || '未指定書商';
     const title = overrides.title || b.title || '—';
     const author = overrides.author || b.author || '—';
     const publisher = overrides.publisher || b.publisher || '—';
     const isbn = b.isbn_normalized || b.isbn || '—';
     const award = overrides.award_item || b.award_item || '—';
     return `<tr>
+      <td><span class="badge badge-vendor">${esc(vendorName)}</span></td>
       <td>${esc(title)}</td>
       <td>${esc(author)}</td>
       <td>${esc(publisher)}</td>

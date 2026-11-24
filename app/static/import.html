@@ -78,7 +78,7 @@
 
   <!-- 書商書單 wizard -->
   <div id="tab-vendor" class="tab-panel">
-    <div id="vendor-alert" class="alert alert-warn" style="display:none">請先前往 <a href="/projects.html" style="font-weight:600;text-decoration:underline;color:inherit">採購專案</a> 選擇專案後再匯入書商書單。</div>
+    <div id="vendor-shared-info" class="alert alert-info">書商書單為<strong>全校共用長期書單庫</strong>，不需先選擇採購專案即可匯入與累積多家書商書單，各專案皆可共用選書。</div>
 
     <div class="wizard-bar" id="vendor-wizard-bar">
       <div class="wstep active" id="ws-A">A&nbsp;上傳</div>
@@ -91,7 +91,20 @@
 
     <!-- 步驟 A -->
     <div id="step-A" class="wizard-step">
-      <div class="alert alert-info">支援 .xlsx 格式。書單資料歸屬於目前選定的採購專案。</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+        <div class="form-group" style="margin:0;min-width:220px;flex:1">
+          <label for="vendor-name-input">書商名稱 <span style="color:#6e6e73;font-size:12px;font-weight:400">（留空將預設為「未指定書商」）</span></label>
+          <input type="text" id="vendor-name-input" list="vendor-name-list" placeholder="例：聯經書局、信誼基金會">
+          <datalist id="vendor-name-list"></datalist>
+        </div>
+        <div class="form-group" style="margin:0;min-width:260px">
+          <label for="import-mode-select">匯入模式</label>
+          <select id="import-mode-select">
+            <option value="upsert">合併更新（同書商同 ISBN 更新價格，保留手動補齊與獲獎整理）</option>
+            <option value="replace_vendor">取代指定書商（僅清除此書商舊書單再重新匯入）</option>
+          </select>
+        </div>
+      </div>
       <div class="upload-area" onclick="document.getElementById('vendor-file').click()" id="vendor-drop">
         <div class="icon">📚</div>
         <div>點擊或拖曳上傳 <strong>書商書單 .xlsx</strong></div>
@@ -123,6 +136,7 @@
     <div id="step-C" class="wizard-step" style="display:none">
       <h3 style="margin:0 0 8px">確認欄位對應</h3>
       <p style="font-size:13px;color:#6e6e73;margin:0 0 12px">系統已自動猜測對應，請確認或調整。帶 <span style="color:#c0392b">*</span> 為必要欄位。</p>
+      <div id="profile-rec-banner" class="profile-rec-banner" style="display:none"></div>
       <div class="card" style="padding:0;margin-bottom:16px">
         <div class="table-wrap" style="max-height:380px;overflow-y:auto">
           <table class="map-table">
@@ -193,7 +207,7 @@
     <!-- 步驟 E -->
     <div id="step-E" class="wizard-step" style="display:none">
       <h3 style="margin:0 0 12px">確認並正式匯入</h3>
-      <div class="alert alert-warn" style="margin-bottom:12px">注意：若本專案先前已匯入過書商書單，本次匯入將會取代本專案既有的書商書單（已選書紀錄會保留）。</div>
+      <div id="step-E-mode-note" class="alert alert-info" style="margin-bottom:12px"></div>
       <div class="card" style="background:#f5f5f7;padding:16px;margin-bottom:16px">
         <dl class="summary-dl" id="import-summary"></dl>
       </div>
@@ -214,8 +228,14 @@
       </div>
     </div>
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid #ffd2d2">
-      <p style="font-size:13px;color:#6e6e73;margin:0 0 8px">危險操作：僅清除書商書單來源資料，已選書紀錄不受影響。</p>
-      <button class="btn" id="clear-vendor-btn" style="background:#dc3545;color:#fff;border:none;cursor:pointer" onclick="clearVendorBooks()">清除目前專案書商書單</button>
+      <p style="font-size:13px;color:#6e6e73;margin:0 0 10px">危險操作：僅清除共用書單庫來源資料，各專案已選書紀錄快照不受影響。</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="clear-vendor-select" style="min-width:200px;padding:6px 8px;border:1px solid #d1d1d6;border-radius:6px;font-size:13px">
+          <option value="">選擇要清除的書商...</option>
+        </select>
+        <button class="btn" id="clear-vendor-btn" style="background:#dc3545;color:#fff;border:none;cursor:pointer" onclick="clearSelectedVendor()">清除指定書商書單</button>
+        <button class="btn" id="clear-all-vendor-btn" style="background:#9b1c1c;color:#fff;border:none;cursor:pointer" onclick="clearAllVendorBooks()">清空全部共用書單庫</button>
+      </div>
       <div id="vendor-clear-result" style="margin-top:12px"></div>
     </div>
   </div>
@@ -290,17 +310,17 @@ requireAuth().then(async () => {
   if (pid) {
     try {
       const proj = await api(`/api/projects/${pid}`);
-      el.textContent = `目前專案：${proj.name}`;
+      el.textContent = `目前專案：${proj.name}（書商書單為全校共用庫）`;
     } catch {
       clearProject();
       pid = null;
-      el.textContent = '請先選擇採購專案';
-      document.getElementById('vendor-alert').style.display = 'block';
+      el.textContent = '目前未選擇專案（仍可直接匯入全校共用書商書單與館藏）';
     }
   } else {
-    el.textContent = '尚未選擇採購專案';
-    document.getElementById('vendor-alert').style.display = 'block';
+    el.textContent = '目前未選擇專案（仍可直接匯入全校共用書商書單與館藏）';
   }
+
+  await loadVendors();
 
   try {
     const batches = await api('/api/imports/batches');
@@ -312,10 +332,29 @@ requireAuth().then(async () => {
   const requestedTab = new URLSearchParams(window.location.search).get('tab');
   if (requestedTab === 'vendor' || requestedTab === 'history' || requestedTab === 'holdings') {
     switchTab(requestedTab);
-  } else if (hasExistingHoldings && pid) {
+  } else if (hasExistingHoldings) {
     switchTab('vendor');
   }
 });
+
+async function loadVendors() {
+  try {
+    const vendors = await api('/api/imports/vendors');
+    const dl = document.getElementById('vendor-name-list');
+    if (dl) {
+      dl.innerHTML = (vendors || []).map(v => `<option value="${esc(v.vendor_name)}"></option>`).join('');
+    }
+    const sel = document.getElementById('clear-vendor-select');
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">選擇要清除的書商...</option>' +
+        (vendors || []).map(v =>
+          `<option value="${esc(v.vendor_name)}">${esc(v.vendor_name)}（${Number(v.book_count) || 0} 筆）</option>`
+        ).join('');
+      if (cur) sel.value = cur;
+    }
+  } catch {}
+}
 
 function switchTab(name, btn) {
   const targetBtn = btn || document.getElementById('tab-btn-' + name);
@@ -366,8 +405,8 @@ async function uploadHoldings(file) {
     let matchInfo = '';
     if (result.match_rerun_error) {
       matchInfo = `<br><span class="text-warning">⚠ 匯入成功，但自動比對失敗，請到比對頁手動重新比對。</span>`;
-    } else if (result.affected_projects && result.affected_projects.length) {
-      matchInfo = `<br>已重新執行比對（${result.affected_projects.length} 個書單專案）`;
+    } else if (result.match_rerun) {
+      matchInfo = `<br>已重新執行全校共用書商書單比對`;
     }
     el.innerHTML = `
       <div class="alert alert-success">
@@ -437,7 +476,6 @@ function resetVendorWizard() {
 
 async function handleFileUpload(file) {
   if (!file) return;
-  if (!pid) { showToast('請先選擇採購專案'); return; }
   wizardFile = file;
   savedMappings = null;
   savedExtraFields = null;
@@ -491,8 +529,45 @@ async function refreshPreview() {
   }
 }
 
+function renderRecommendedProfileBanner() {
+  const banner = document.getElementById('profile-rec-banner');
+  if (!banner) return;
+  const rec = previewData && previewData.recommended_profile;
+  if (!rec) {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    return;
+  }
+  const pct = Math.round((Number(rec.overlap_ratio) || 0) * 100);
+  banner.style.display = 'flex';
+  banner.innerHTML = `
+    <div>
+      建議套用既有的書商欄位設定檔：<strong>${esc(rec.name)}</strong>
+      （符合 ${Number(rec.matched_columns) || 0}/${Number(rec.total_profile_columns) || 0} 欄，相符度 ${pct}%）
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" onclick="applyRecommendedProfile()">一鍵套用</button>
+  `;
+}
+
+function applyRecommendedProfile() {
+  const rec = previewData && previewData.recommended_profile;
+  if (!rec) return;
+  const srcSet = new Set(previewData.source_columns || []);
+  const applied = {};
+  Object.entries(rec.mappings || {}).forEach(([sys, src]) => {
+    if (src && srcSet.has(src)) applied[sys] = src;
+  });
+  savedMappings = applied;
+  if (Array.isArray(rec.extra_field_settings)) {
+    savedExtraFields = rec.extra_field_settings.filter(col => srcSet.has(col));
+  }
+  renderMappingTable();
+  showToast(`已套用設定檔「${rec.name}」`);
+}
+
 function renderMappingTable() {
   if (!previewData) return;
+  renderRecommendedProfileBanner();
   const cols = ['', ...previewData.source_columns];
   const tbody = document.getElementById('mapping-body');
   tbody.innerHTML = SYSTEM_FIELDS.map(f => {
@@ -722,6 +797,21 @@ function renderSummary() {
   const extras = getExtraFields();
   const sheetName = document.getElementById('sheet-select').value;
   const hr1 = document.getElementById('header-row-input').value;
+  const vendorName = document.getElementById('vendor-name-input').value.trim() || '未指定書商';
+  const importMode = document.getElementById('import-mode-select').value;
+  const modeLabel = importMode === 'replace_vendor'
+    ? '取代指定書商（僅清除此書商舊書單再匯入）'
+    : '合併更新（同書商同 ISBN 更新價格，保留手動補齊與獲獎整理）';
+  const noteEl = document.getElementById('step-E-mode-note');
+  if (noteEl) {
+    if (importMode === 'replace_vendor') {
+      noteEl.className = 'alert alert-warn';
+      noteEl.textContent = `注意：本次將先清除「${vendorName}」既有書商書單再重新匯入；其他書商書單與各專案已選書紀錄不受影響。`;
+    } else {
+      noteEl.className = 'alert alert-info';
+      noteEl.textContent = `本次將以合併更新模式寫入「${vendorName}」至全校共用書單庫：同 ISBN 將更新價格與最新欄位，並保留老師既有的手動補齊與獲獎整理結果。`;
+    }
+  }
   const mapDesc = Object.entries(mappings).map(([sys, src]) => {
     const f = SYSTEM_FIELDS.find(x => x.key === sys);
     return `${f ? f.label : sys}→${src}`;
@@ -737,6 +827,8 @@ function renderSummary() {
       (pending > 0 ? ` — 尚有 ${pending} 組未確認（將套用系統建議值）` : '');
   }
   document.getElementById('import-summary').innerHTML = `
+    <dt>書商名稱</dt><dd><strong>${esc(vendorName)}</strong></dd>
+    <dt>匯入模式</dt><dd>${esc(modeLabel)}</dd>
     <dt>工作表</dt><dd>${esc(sheetName)}</dd>
     <dt>標題列</dt><dd>第 ${esc(hr1)} 列</dd>
     <dt>欄位對應</dt><dd style="word-break:break-all">${esc(mapDesc) || '（無）'}</dd>
@@ -755,7 +847,7 @@ function toggleProfileName() {
 }
 
 async function doConfirmImport() {
-  if (!wizardFile || !pid) return;
+  if (!wizardFile) return;
   const btn = document.getElementById('confirm-btn');
   btn.disabled = true;
   btn.textContent = '匯入中...';
@@ -768,10 +860,14 @@ async function doConfirmImport() {
   const extras = getExtraFields();
   const saveProfile = document.getElementById('save-profile-cb').checked;
   const profileName = document.getElementById('profile-name-input').value.trim();
+  const vendorName = document.getElementById('vendor-name-input').value.trim();
+  const importMode = document.getElementById('import-mode-select').value;
 
   const fd = new FormData();
   fd.append('file', wizardFile);
-  fd.append('project_id', pid);
+  if (pid) fd.append('project_id', pid);
+  if (vendorName) fd.append('vendor_name', vendorName);
+  fd.append('import_mode', importMode);
   fd.append('sheet_name', sheetName);
   fd.append('header_row', hr1 - 1);
   fd.append('mappings', JSON.stringify(mappings));
@@ -786,12 +882,21 @@ async function doConfirmImport() {
     if (result.match_rerun_error) {
       matchSummary = `<br><span class="text-warning">⚠ 匯入成功，但自動比對失敗，請到比對頁手動重新比對。</span>`;
     } else if (result.match_stats) {
-      matchSummary = `<br>可採購 <strong>${result.match_stats.available ?? 0}</strong> 筆・已館藏 <strong>${result.match_stats.already_owned ?? 0}</strong> 筆`;
+      matchSummary = `<br>全校共用書單比對：可採購 <strong>${result.match_stats.available ?? 0}</strong> 筆・已館藏 <strong>${result.match_stats.already_owned ?? 0}</strong> 筆`;
+    }
+    const detailParts = [
+      `新增 <strong>${Number(result.inserted_count) || 0}</strong> 筆`,
+      `更新 <strong>${Number(result.updated_count) || 0}</strong> 筆`,
+    ];
+    if (result.preserved_override_count) {
+      detailParts.push(`保留手動補齊 <strong>${Number(result.preserved_override_count)}</strong> 筆`);
+    }
+    if (result.skipped_count) {
+      detailParts.push(`略過空白列 ${Number(result.skipped_count)} 筆`);
     }
     document.getElementById('step-E-result').innerHTML = `
       <div class="alert alert-success">
-        ✓ 匯入完成：共 <strong>${result.record_count}</strong> 筆
-        ${result.skipped_count ? `（略過空白列 ${result.skipped_count} 筆）` : ''}
+        ✓ 匯入完成（書商：<strong>${esc(result.vendor_name || '未指定書商')}</strong>）：共 <strong>${result.record_count}</strong> 筆（${detailParts.join('・')}）
         ${matchSummary}
       </div>
       <p style="margin-top:10px;font-size:14px;display:flex;gap:16px;flex-wrap:wrap">
@@ -800,6 +905,7 @@ async function doConfirmImport() {
       </p>`;
     btn.textContent = '已匯入';
     document.getElementById('reset-wizard-btn').style.display = '';
+    await loadVendors();
     showToast('書單匯入完成');
   } catch (e) {
     document.getElementById('step-E-result').innerHTML =
@@ -824,11 +930,12 @@ async function loadHistory() {
     return;
   }
   el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>檔名</th><th>類型</th><th>筆數</th><th>匯入時間</th></tr></thead>
+    <thead><tr><th>檔名</th><th>類型</th><th>書商</th><th>筆數</th><th>匯入時間</th></tr></thead>
     <tbody>${batches.map(b => `
       <tr>
         <td>${esc(b.original_filename)}</td>
         <td>${b.batch_type === 'library_holdings' ? '館藏' : '書商書單'}</td>
+        <td>${b.batch_type === 'vendor_books' ? esc(b.vendor_name || '未指定書商') : '—'}</td>
         <td>${b.record_count || '—'}</td>
         <td>${esc(new Date(b.imported_at).toLocaleString('zh-TW'))}</td>
       </tr>`).join('')}
@@ -855,21 +962,44 @@ async function clearHoldings() {
   }
 }
 
-async function clearVendorBooks() {
-  if (!pid) {
-    document.getElementById('vendor-clear-result').innerHTML = '<div class="alert alert-warn">請先選擇採購專案。</div>';
+async function clearSelectedVendor() {
+  const sel = document.getElementById('clear-vendor-select');
+  const vendorName = sel ? sel.value : '';
+  const el = document.getElementById('vendor-clear-result');
+  if (!vendorName) {
+    el.innerHTML = '<div class="alert alert-warn">請先選擇要清除的書商。</div>';
     return;
   }
-  if (!confirm('確定要清除目前專案的書商書單來源資料？此操作無法復原。已選書紀錄將保留。')) return;
+  if (!confirm(`確定要清除「${vendorName}」的書商書單來源資料？此操作無法復原。其他書商與已選書紀錄將保留。`)) return;
   const input = prompt('請輸入「清除」以確認：');
   if (input !== '清除') return;
   const btn = document.getElementById('clear-vendor-btn');
-  const el = document.getElementById('vendor-clear-result');
   btn.disabled = true;
   el.innerHTML = '<span style="color:#6e6e73">清除中...</span>';
   try {
-    const result = await api(`/api/imports/vendor-books?project_id=${pid}`, { method: 'DELETE' });
-    el.innerHTML = `<div class="alert alert-success">已清除：書商書單 ${result.deleted_vendor_books} 筆、比對紀錄 ${result.deleted_matches} 筆、匯入批次 ${result.deleted_batches} 筆。已選書紀錄保留 ${result.preserved_selection_items} 筆。</div>`;
+    const result = await api(`/api/imports/vendor-books?vendor_name=${encodeURIComponent(vendorName)}`, { method: 'DELETE' });
+    el.innerHTML = `<div class="alert alert-success">已清除「${esc(result.vendor_name || vendorName)}」：書商書單 ${result.deleted_vendor_books} 筆、比對紀錄 ${result.deleted_matches} 筆、匯入批次 ${result.deleted_batches} 筆。已選書紀錄保留 ${result.preserved_selection_items} 筆。</div>`;
+    await loadVendors();
+    loadHistory();
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-error">清除失敗：${esc(e.message || e)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function clearAllVendorBooks() {
+  const el = document.getElementById('vendor-clear-result');
+  if (!confirm('確定要清空「全部」全校共用書商書單庫？此操作無法復原。各專案已選書紀錄快照將保留。')) return;
+  const input = prompt('請輸入「清除」以確認：');
+  if (input !== '清除') return;
+  const btn = document.getElementById('clear-all-vendor-btn');
+  btn.disabled = true;
+  el.innerHTML = '<span style="color:#6e6e73">清除中...</span>';
+  try {
+    const result = await api('/api/imports/vendor-books?clear_all=true', { method: 'DELETE' });
+    el.innerHTML = `<div class="alert alert-success">已清空全部共用書單庫：書商書單 ${result.deleted_vendor_books} 筆、比對紀錄 ${result.deleted_matches} 筆、匯入批次 ${result.deleted_batches} 筆。已選書紀錄保留 ${result.preserved_selection_items} 筆。</div>`;
+    await loadVendors();
     loadHistory();
   } catch (e) {
     el.innerHTML = `<div class="alert alert-error">清除失敗：${esc(e.message || e)}</div>`;

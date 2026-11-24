@@ -61,6 +61,12 @@
 
   <div class="filter-bar" style="flex-wrap:wrap;gap:6px 8px">
     <div class="filter-field">
+      <label>書商：</label>
+      <select id="filter-vendor" onchange="applyFilter()">
+        <option value="">全部書商</option>
+      </select>
+    </div>
+    <div class="filter-field">
       <label>比對狀態：</label>
       <select id="filter-match" onchange="applyFilter()">
         <option value="">全部</option>
@@ -160,7 +166,7 @@ let isComposing = false;
 let filtersRestored = false;
 
 const FILTER_IDS = [
-  'filter-match', 'filter-comp', 'filter-book-type', 'filter-age',
+  'filter-vendor', 'filter-match', 'filter-comp', 'filter-book-type', 'filter-age',
   'filter-category', 'filter-policy-topic', 'filter-purchase-category',
   'filter-recommendation-source', 'filter-min-price', 'filter-max-price',
   'filter-text', 'filter-sort',
@@ -307,6 +313,7 @@ function populateDynamicSelects() {
         .join('');
     if (cur) sel.value = cur;
   };
+  populate('filter-vendor', allBooks.map(b => b.vendor_name || '未指定書商'));
   populate('filter-book-type', allBooks.map(b => b.book_type));
   populate('filter-age', allBooks.map(b => b.age_range));
   populate('filter-category', allBooks.map(b => b.category));
@@ -394,6 +401,7 @@ function compareBooks(a, b, sortMode) {
 
 function applyFilter(opts = {}) {
   saveFilterState();
+  const vendorVal = document.getElementById('filter-vendor').value;
   const matchVal = document.getElementById('filter-match').value;
   const comp = document.getElementById('filter-comp').value;
   const bookType = document.getElementById('filter-book-type').value;
@@ -408,6 +416,7 @@ function applyFilter(opts = {}) {
   const sortMode = document.getElementById('filter-sort').value;
 
   let filtered = allBooks;
+  if (vendorVal) filtered = filtered.filter(b => (b.vendor_name || '未指定書商') === vendorVal);
   if (matchVal === 'same_title_different_isbn') {
     filtered = filtered.filter(b => Boolean(b.similar_holding));
   } else if (matchVal === 'other_project_selected') {
@@ -491,7 +500,7 @@ function goPage(delta) {
 }
 
 function resetFilters() {
-  ['filter-match', 'filter-comp', 'filter-book-type', 'filter-age', 'filter-category', 'filter-policy-topic', 'filter-purchase-category', 'filter-recommendation-source', 'filter-sort']
+  ['filter-vendor', 'filter-match', 'filter-comp', 'filter-book-type', 'filter-age', 'filter-category', 'filter-policy-topic', 'filter-purchase-category', 'filter-recommendation-source', 'filter-sort']
     .forEach(id => { const s = document.getElementById(id); s.value = s.options[0].value; });
   ['filter-min-price', 'filter-max-price', 'filter-text']
     .forEach(id => { document.getElementById(id).value = ''; });
@@ -508,6 +517,22 @@ function renderMatchBadge(b) {
   return badge(status);
 }
 
+function renderVendorCompareBox(b) {
+  if (!Array.isArray(b.other_vendor_offers) || b.other_vendor_offers.length === 0) return '';
+  const curPrice = getEffectivePrice(b);
+  const offerLines = b.other_vendor_offers.map(o => {
+    const oPrice = o.purchase_price != null ? Number(o.purchase_price)
+      : (o.list_price != null ? Number(o.list_price) : null);
+    const priceLabel = o.purchase_price != null
+      ? `單價 NT$ ${formatCurrency(o.purchase_price)}`
+      : (o.list_price != null ? `定價 NT$ ${formatCurrency(o.list_price)}` : '無價格');
+    const isCheaper = curPrice !== null && oPrice !== null && oPrice < curPrice;
+    const cheaperTag = isCheaper ? '<span class="vendor-compare-cheaper">較低價</span>' : '';
+    return `<div>${esc(o.vendor_name || '未指定書商')}：${esc(priceLabel)}${cheaperTag}</div>`;
+  }).join('');
+  return `<div class="vendor-compare-box"><strong>多家供貨比價</strong>${offerLines}</div>`;
+}
+
 function renderDuplicateWarnings(b) {
   let html = '';
   if (b.similar_holding) {
@@ -518,8 +543,16 @@ function renderDuplicateWarnings(b) {
     html += `<div class="dup-warn-box dup-warn-similar"><span class="badge badge-similar">疑似同名館藏</span> 館藏：${detailParts.join(' / ')}${isbnText}</div>`;
   }
   if (Array.isArray(b.other_project_selections) && b.other_project_selections.length > 0) {
-    const names = b.other_project_selections.map(p => esc(p.project_name || '')).filter(Boolean).join('、');
-    html += `<div class="dup-warn-box dup-warn-other-project"><span class="badge badge-other-project">他案已選</span> ${names}</div>`;
+    const exported = b.other_project_selections.filter(p => p.has_exported);
+    const selecting = b.other_project_selections.filter(p => !p.has_exported);
+    if (exported.length > 0) {
+      const names = exported.map(p => esc(p.project_name || '')).filter(Boolean).join('、');
+      html += `<div class="dup-warn-box dup-warn-other-project"><span class="badge badge-other-exported">他案已匯出</span> ${names}</div>`;
+    }
+    if (selecting.length > 0) {
+      const names = selecting.map(p => esc(p.project_name || '')).filter(Boolean).join('、');
+      html += `<div class="dup-warn-box dup-warn-other-project"><span class="badge badge-other-project">他案選書中</span> ${names}</div>`;
+    }
   }
   return html;
 }
@@ -567,7 +600,8 @@ function render(books) {
         ${award ? `<div class="book-card-award">${esc(award)}</div>` : ''}
         ${policyTopic ? `<div style="font-size:11px;margin-top:4px"><span style="background:#e8f4f8;color:#1d6fa4;border-radius:3px;padding:1px 5px">${esc(policyTopic)}</span></div>` : ''}
         ${summary ? `<div style="font-size:12px;color:#6e6e73;margin-top:4px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(summary)}</div>` : ''}
-        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">${renderMatchBadge(b)}${badge(b.completeness_status || 'unknown')}</div>
+        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center"><span class="badge badge-vendor">${esc(b.vendor_name || '未指定書商')}</span>${renderMatchBadge(b)}${badge(b.completeness_status || 'unknown')}</div>
+        ${renderVendorCompareBox(b)}
         ${renderDuplicateWarnings(b)}
       </div>
       <div class="book-card-footer">
@@ -709,7 +743,7 @@ async function saveOverrides(bookId, btn) {
   inputs.forEach(inp => { overrides[inp.dataset.field] = inp.value.trim(); });
   if (btn) btn.disabled = true;
   try {
-    await api(`/api/books/${bookId}/overrides`, {
+    await api(`/api/books/${bookId}/overrides?project_id=${pid}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ overrides })
