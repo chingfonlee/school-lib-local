@@ -300,6 +300,190 @@ def bulk_add_selections(
     return {"added": added, "skipped": skipped}
 
 
+def import_selections_from_projects(
+    target_project_id: int,
+    source_project_ids: list[int],
+    user_id: int,
+    skip_already_owned: bool = True,
+) -> dict[str, int]:
+    now = datetime.now(timezone.utc).isoformat()
+
+    with db_session(get_connection) as conn:
+        target_row = conn.execute(
+            "SELECT id, project_type FROM procurement_projects WHERE id = ?",
+            (target_project_id,),
+        ).fetchone()
+        if target_row is None:
+            raise ValueError(f"目標專案 id={target_project_id} 不存在")
+        target_project_type: str | None = target_row["project_type"]
+
+        cleaned_source_ids: list[int] = []
+        seen_src: set[int] = set()
+        for sid in source_project_ids:
+            if sid == target_project_id or sid in seen_src:
+                continue
+            seen_src.add(sid)
+            cleaned_source_ids.append(sid)
+
+        if not cleaned_source_ids:
+            return {"added": 0, "skipped_duplicate": 0, "skipped_owned": 0}
+
+        existing_vb_ids: set[int] = set()
+        existing_isbns: set[str] = set()
+        for row in conn.execute(
+            "SELECT vendor_book_id, isbn_normalized FROM selection_items WHERE project_id = ?",
+            (target_project_id,),
+        ).fetchall():
+            if row["vendor_book_id"] is not None:
+                existing_vb_ids.add(int(row["vendor_book_id"]))
+            isbn_norm = (row["isbn_normalized"] or "").strip()
+            if isbn_norm:
+                existing_isbns.add(isbn_norm)
+
+        owned_isbns: set[str] = set()
+        if skip_already_owned:
+            for row in conn.execute(
+                "SELECT DISTINCT isbn_normalized FROM library_holdings "
+                "WHERE isbn_normalized IS NOT NULL AND TRIM(isbn_normalized) != ''"
+            ).fetchall():
+                val = (row["isbn_normalized"] or "").strip()
+                if val:
+                    owned_isbns.add(val)
+
+        added = 0
+        skipped_duplicate = 0
+        skipped_owned = 0
+
+        for src_pid in cleaned_source_ids:
+            src_rows = conn.execute(
+                "SELECT si.*, "
+                "(SELECT bm.match_status FROM book_matches bm "
+                "  WHERE bm.vendor_book_id = si.vendor_book_id "
+                "    AND bm.match_status != 'same_title_different_isbn' "
+                "  ORDER BY bm.id DESC LIMIT 1) AS current_match_status, "
+                "(SELECT bm.holding_id FROM book_matches bm "
+                "  WHERE bm.vendor_book_id = si.vendor_book_id "
+                "    AND bm.match_status != 'same_title_different_isbn' "
+                "  ORDER BY bm.id DESC LIMIT 1) AS current_holding_id "
+                "FROM selection_items si "
+                "WHERE si.project_id = ? AND si.selected_quantity > 0 "
+                "ORDER BY si.id",
+                (src_pid,),
+            ).fetchall()
+
+            for row in src_rows:
+                snap = dict(row)
+                vbid = snap.get("vendor_book_id")
+                isbn_norm = (snap.get("isbn_normalized") or "").strip()
+
+                if (vbid is not None and int(vbid) in existing_vb_ids) or (isbn_norm and isbn_norm in existing_isbns):
+                    skipped_duplicate += 1
+                    continue
+
+                cur_match_status = snap.get("current_match_status")
+                if skip_already_owned and (
+                    cur_match_status == "already_owned" or (isbn_norm and isbn_norm in owned_isbns)
+                ):
+                    skipped_owned += 1
+                    continue
+
+                overrides_raw = snap.get("user_overrides")
+                overrides_dict: dict[str, Any] = {}
+                if overrides_raw:
+                    try:
+                        parsed = json.loads(overrides_raw)
+                        if isinstance(parsed, dict):
+                            overrides_dict = parsed
+                    except (ValueError, TypeError):
+                        overrides_dict = {}
+
+                new_completeness = compute_completeness(
+                    snap,
+                    overrides_dict,
+                    project_type=target_project_type,
+                )
+                match_status_at_sel = (
+                    cur_match_status if cur_match_status is not None else snap.get("match_status_at_selection")
+                )
+                holding_id_at_sel = (
+                    snap.get("current_holding_id")
+                    if cur_match_status is not None
+                    else snap.get("holding_id_at_selection")
+                )
+
+                conn.execute(
+                    "INSERT INTO selection_items("
+                    "project_id, vendor_book_id, "
+                    "source_batch_id, source_original_filename, source_row_number, "
+                    "selected_quantity, notes, "
+                    "title, author, publisher, isbn, isbn_normalized, isbn_status, "
+                    "publish_date, list_price, purchase_price, "
+                    "award_item, vendor_seq, age_range, "
+                    "category, book_type, policy_topic, summary, "
+                    "source_url, recommendation_source, eligibility_label, award_notes, "
+                    "classification_number, "
+                    "completeness_status, "
+                    "match_status_at_selection, holding_id_at_selection, "
+                    "user_overrides, extra_fields, raw_row, "
+                    "created_by, created_at, updated_at"
+                    ") VALUES ("
+                    "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+                    ")",
+                    (
+                        target_project_id,
+                        vbid,
+                        snap.get("source_batch_id"),
+                        snap.get("source_original_filename"),
+                        snap.get("source_row_number"),
+                        1,
+                        snap.get("notes"),
+                        snap.get("title"),
+                        snap.get("author"),
+                        snap.get("publisher"),
+                        snap.get("isbn"),
+                        snap.get("isbn_normalized"),
+                        snap.get("isbn_status"),
+                        snap.get("publish_date"),
+                        snap.get("list_price"),
+                        snap.get("purchase_price"),
+                        snap.get("award_item"),
+                        snap.get("vendor_seq"),
+                        snap.get("age_range"),
+                        snap.get("category"),
+                        snap.get("book_type"),
+                        snap.get("policy_topic"),
+                        snap.get("summary"),
+                        snap.get("source_url"),
+                        snap.get("recommendation_source"),
+                        snap.get("eligibility_label"),
+                        snap.get("award_notes"),
+                        snap.get("classification_number"),
+                        new_completeness,
+                        match_status_at_sel,
+                        holding_id_at_sel,
+                        overrides_raw,
+                        snap.get("extra_fields"),
+                        snap.get("raw_row"),
+                        user_id,
+                        now,
+                        now,
+                    ),
+                )
+                if vbid is not None:
+                    existing_vb_ids.add(int(vbid))
+                if isbn_norm:
+                    existing_isbns.add(isbn_norm)
+                added += 1
+
+        conn.commit()
+    return {
+        "added": added,
+        "skipped_duplicate": skipped_duplicate,
+        "skipped_owned": skipped_owned,
+    }
+
+
 def _resolve_price(db_val: Any, override_val: Any) -> float | None:
     if override_val not in (None, ""):
         try:

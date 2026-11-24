@@ -3,14 +3,15 @@ from pydantic import BaseModel, Field
 
 from app.auth import require_auth
 from app.services.selection_service import (
-    upsert_selection,
     bulk_add_selections,
-    get_selection_summary,
-    get_selected_books,
-    remove_selection,
     clear_all_selections,
+    get_selected_books,
+    get_selection_summary,
+    import_selections_from_projects,
+    remove_selection,
     update_selection_overrides,
     update_selection_quantity,
+    upsert_selection,
 )
 
 router = APIRouter(prefix="/api/selections", tags=["selections"])
@@ -39,6 +40,29 @@ class BulkSelectionItem(BaseModel):
 class BulkSelectionRequest(BaseModel):
     project_id: int
     items: list[BulkSelectionItem]
+
+
+class ImportFromProjectsRequest(BaseModel):
+    target_project_id: int
+    source_project_ids: list[int] = Field(..., min_length=1)
+    skip_already_owned: bool = True
+
+
+@router.post("/import-from-projects")
+async def import_from_projects(
+    body: ImportFromProjectsRequest,
+    user_id: int = Depends(require_auth),
+):
+    try:
+        result = import_selections_from_projects(
+            body.target_project_id,
+            body.source_project_ids,
+            user_id,
+            skip_already_owned=body.skip_already_owned,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
 
 
 @router.post("/bulk")
