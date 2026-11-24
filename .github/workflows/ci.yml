@@ -39,7 +39,7 @@ jobs:
         run: python -m ruff check app tests
 
       - name: Type check
-        run: python -m mypy app/logging_config.py app/database.py app/main.py app/routers/backup.py app/routers/projects.py
+        run: python -m mypy app/logging_config.py app/database.py app/main.py app/routers/backup.py app/routers/projects.py app/services/isbn_service.py app/services/completeness_service.py app/services/match_service.py app/services/validation_service.py
 
       - name: Run tests
         run: python -m pytest -q
