@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-import-match-export-fixes
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-11-24
 # Project Status
 
 ## Active Tasks
+
+- id: task-import-match-export-fixes
+  status: active
+  branch: fix/task-import-match-export-fixes
+  base_branch: main
+  last_log: ""
+  last_agent: ""
 
 - id: task-db-reliability-and-logging
   status: done
