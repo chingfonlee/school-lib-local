@@ -38,6 +38,7 @@ _TEST_SCHEMA = [
         batch_type TEXT NOT NULL DEFAULT 'vendor_books',
         original_filename TEXT NOT NULL DEFAULT '',
         profile_id INTEGER,
+        vendor_name TEXT,
         imported_by INTEGER,
         imported_at TEXT NOT NULL DEFAULT '',
         record_count INTEGER,

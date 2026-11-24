@@ -52,9 +52,10 @@ def test_delete_preview_counts_related_data(auth_client, project_db):
     resp = auth_client.get(f"/api/projects/{project_id}/delete-preview")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["import_batch_count"] == 1
-    assert data["vendor_book_count"] == 1
+    assert data["import_batch_count"] == 0
+    assert data["vendor_book_count"] == 0
     assert data["selection_count"] == 1
+    assert data["shared_catalog_preserved"] is True
 
 
 def test_delete_preview_nonexistent_returns_404(auth_client, project_db):
@@ -87,7 +88,7 @@ def test_delete_project_success(auth_client, project_db):
 
 
 def test_delete_project_cascades_related_data(auth_client, project_db):
-    """Deleting a project removes its batches, vendor_books, selection_items, export_jobs."""
+    """Deleting a project removes its selection_items and export_jobs while preserving shared vendor catalog."""
     project_id = project_db.execute(
         "SELECT id FROM procurement_projects WHERE name='測試專案'"
     ).fetchone()[0]
@@ -115,20 +116,26 @@ def test_delete_project_cascades_related_data(auth_client, project_db):
     resp = auth_client.delete(f"/api/projects/{project_id}")
     assert resp.status_code == 200
 
+    # Legacy vendor_books batch is migrated to shared pool (project_id = NULL) and preserved
     assert project_db.execute(
         "SELECT COUNT(*) FROM import_batches WHERE project_id = ?", (project_id,)
     ).fetchone()[0] == 0
+    batch_row = project_db.execute(
+        "SELECT project_id FROM import_batches WHERE id = ?", (batch_id,)
+    ).fetchone()
+    assert batch_row is not None and batch_row["project_id"] is None
     assert project_db.execute(
         "SELECT COUNT(*) FROM vendor_books WHERE batch_id = ?", (batch_id,)
-    ).fetchone()[0] == 0
+    ).fetchone()[0] == 1
+    assert project_db.execute(
+        "SELECT COUNT(*) FROM book_matches WHERE vendor_book_id = ?", (vb_id,)
+    ).fetchone()[0] == 1
+    # Project-owned selection_items and export_jobs are deleted
     assert project_db.execute(
         "SELECT COUNT(*) FROM selection_items WHERE project_id = ?", (project_id,)
     ).fetchone()[0] == 0
     assert project_db.execute(
         "SELECT COUNT(*) FROM export_jobs WHERE project_id = ?", (project_id,)
-    ).fetchone()[0] == 0
-    assert project_db.execute(
-        "SELECT COUNT(*) FROM book_matches WHERE vendor_book_id = ?", (vb_id,)
     ).fetchone()[0] == 0
 
 

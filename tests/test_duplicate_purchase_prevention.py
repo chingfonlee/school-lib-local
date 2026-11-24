@@ -189,8 +189,8 @@ def test_books_matches_and_stats_return_copies_similar_other_projects_and_filter
         assert by_id[103]["holding_copies"] == 0
         assert by_id[103]["similar_holding"] is None
         assert by_id[103]["other_project_selections"] == [
-            {"project_id": 2, "project_name": "114一般圖書"},
-            {"project_id": 3, "project_name": "114偏鄉閱讀"},
+            {"project_id": 2, "project_name": "114一般圖書", "has_exported": False},
+            {"project_id": 3, "project_name": "114偏鄉閱讀", "has_exported": False},
         ]
 
         # 104: clean available

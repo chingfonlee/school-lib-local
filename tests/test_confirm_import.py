@@ -17,6 +17,7 @@ CREATE TABLE import_batches (
     batch_type TEXT,
     original_filename TEXT,
     profile_id INTEGER,
+    vendor_name TEXT,
     imported_by INTEGER,
     imported_at TEXT,
     record_count INTEGER
@@ -48,7 +49,8 @@ CREATE TABLE vendor_books (
     recommendation_source TEXT,
     eligibility_label TEXT,
     classification_number TEXT,
-    award_notes TEXT
+    award_notes TEXT,
+    user_overrides TEXT
 );
 CREATE TABLE book_matches (
     id INTEGER PRIMARY KEY,

@@ -58,6 +58,7 @@ def _create_import_db() -> sqlite3.Connection:
             batch_type TEXT NOT NULL,
             original_filename TEXT NOT NULL,
             profile_id INTEGER,
+            vendor_name TEXT,
             imported_by INTEGER,
             imported_at TEXT NOT NULL,
             record_count INTEGER
@@ -89,7 +90,8 @@ def _create_import_db() -> sqlite3.Connection:
             recommendation_source TEXT,
             eligibility_label TEXT,
             classification_number TEXT,
-            award_notes TEXT
+            award_notes TEXT,
+            user_overrides TEXT
         );
         CREATE TABLE library_holdings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
