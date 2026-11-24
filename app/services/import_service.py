@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from app.database import db_session, get_connection
+from app.services.award_normalization_service import group_normalize
 from app.services.isbn_service import normalize_isbn, get_isbn_status
 from app.services.completeness_service import compute as compute_completeness
 from app.services.match_service import run_match
@@ -188,6 +189,58 @@ def preview_excel(
     }
 
 
+def preview_award_groups(
+    file_bytes: bytes,
+    filename: str,
+    sheet_name: str | None,
+    header_row: int,
+    mappings: dict,
+    project_type: str = "general_books",
+) -> list[dict]:
+    """
+    Parse vendor Excel file and return grouped award normalization suggestions without writing to DB.
+    """
+    award_col = mappings.get("award_item")
+    if not award_col:
+        raise ValueError("尚未對應獲獎項目欄位")
+
+    engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
+    sheet = sheet_name if sheet_name else 0
+    df = pd.read_excel(
+        io.BytesIO(file_bytes),
+        engine=engine,
+        sheet_name=sheet,
+        header=header_row,
+        dtype=str,
+    )
+    df.columns = [str(c).strip() for c in df.columns]
+
+    rows: list[dict] = []
+    for _, row in df.iterrows():
+        raw = {col: (None if pd.isna(row[col]) else str(row[col]).strip()) for col in df.columns}
+
+        def get_field(sys_field: str):
+            src_col = mappings.get(sys_field)
+            if src_col:
+                v = raw.get(src_col)
+                return v if v else None
+            return None
+
+        isbn_raw = get_field("isbn")
+        title = get_field("title")
+        if _is_blank_or_total_row([isbn_raw, title, get_field("author"), get_field("publisher")]):
+            continue
+
+        rows.append(
+            {
+                "award_item": get_field("award_item"),
+                "title": title,
+            }
+        )
+
+    return group_normalize(rows, project_type=project_type)
+
+
 _VENDOR_BOOKS_INSERT_SQL = (
     "INSERT INTO vendor_books"
     "(batch_id, award_item, vendor_seq, title, author, isbn, isbn_normalized, "
@@ -212,6 +265,7 @@ def _insert_vendor_books_core(
     header_row: int | None,
     pp_formula_map: dict,
     record_row_numbers: bool,
+    award_overrides: dict | None = None,
 ) -> tuple[int, int, int]:
     """
     Shared core logic for inserting vendor_books rows into an open transaction.
@@ -263,15 +317,27 @@ def _insert_vendor_books_core(
             if formula:
                 purchase_price = _resolve_formula_purchase_price(formula, list_price)
 
+        award_item = get_field("award_item")
+        raw_award = (award_item or "").strip()
+        override = award_overrides.get(raw_award) if award_overrides else None
+        if isinstance(override, dict):
+            recommendation_source = override.get("recommendation_source") or None
+            eligibility_label = override.get("eligibility_label") or None
+            award_notes = override.get("award_notes") or None
+        else:
+            recommendation_source = get_field("recommendation_source")
+            eligibility_label = get_field("eligibility_label")
+            award_notes = get_field("award_notes")
+
         book = {
             "title": title,
             "list_price": list_price,
             "purchase_price": purchase_price,
             "author": get_field("author"),
             "publisher": get_field("publisher"),
-            "award_item": get_field("award_item"),
-            "eligibility_label": get_field("eligibility_label"),
-            "recommendation_source": get_field("recommendation_source"),
+            "award_item": award_item,
+            "eligibility_label": eligibility_label,
+            "recommendation_source": recommendation_source,
         }
         completeness = compute_completeness(book, project_type=proj_type)
 
@@ -299,10 +365,10 @@ def _insert_vendor_books_core(
                 get_field("policy_topic"),
                 get_field("summary"),
                 get_field("source_url"),
-                get_field("recommendation_source"),
-                get_field("eligibility_label"),
+                recommendation_source,
+                eligibility_label,
                 get_field("classification_number"),
-                get_field("award_notes"),
+                award_notes,
             )
         )
 
@@ -328,6 +394,7 @@ def confirm_import(
     extra_field_settings: list,
     user_id: int,
     profile_id: int | None = None,
+    award_overrides: dict | None = None,
 ) -> dict:
     """
     Formally import vendor books using user-confirmed mappings (sys_field → src_col).
@@ -367,6 +434,7 @@ def confirm_import(
             header_row=header_row,
             pp_formula_map=pp_formula_map,
             record_row_numbers=True,
+            award_overrides=award_overrides,
         )
         conn.commit()
 

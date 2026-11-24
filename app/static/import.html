@@ -19,6 +19,17 @@
 .summary-dl{display:grid;grid-template-columns:120px 1fr;gap:6px 12px;font-size:14px}
 .summary-dl dt{color:#6e6e73;text-align:right}
 .summary-dl dd{margin:0}
+.award-table td{padding:6px 8px;vertical-align:top;font-size:13px}
+.award-table select,.award-table input[type="text"]{width:100%;padding:4px 6px;border:1px solid #d1d1d6;border-radius:4px;font-size:13px;box-sizing:border-box}
+.award-row-needs_review{background:#fff8e1}
+.award-row-unrecognized{background:#ffebee}
+.award-row-overridden{background:#e3f2fd}
+.award-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;white-space:nowrap}
+.award-badge-auto{background:#e8f5e9;color:#2e7d32}
+.award-badge-needs_review{background:#fff3cd;color:#856404}
+.award-badge-unrecognized{background:#f8d7da;color:#842029}
+.award-badge-overridden{background:#cfe2ff;color:#084298}
+.award-badge-empty{background:#eceff1;color:#546e7a}
 </style>
 </head>
 <body>
@@ -74,6 +85,7 @@
       <div class="wstep" id="ws-B">B&nbsp;工作表</div>
       <div class="wstep" id="ws-C">C&nbsp;欄位對應</div>
       <div class="wstep" id="ws-D">D&nbsp;額外欄位</div>
+      <div class="wstep" id="ws-award">整&nbsp;整理獲獎</div>
       <div class="wstep" id="ws-E">E&nbsp;確認匯入</div>
     </div>
 
@@ -134,6 +146,46 @@
       <div id="step-D-empty" class="alert alert-info" style="display:none;margin-bottom:12px">無額外欄位。</div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-secondary" onclick="goToStep('C')">← 上一步</button>
+        <button class="btn btn-primary" onclick="goToStep('award')">下一步 →</button>
+      </div>
+    </div>
+
+    <!-- 步驟 整理獲獎 -->
+    <div id="step-award" class="wizard-step" style="display:none">
+      <h3 style="margin:0 0 8px">整理獲獎項目</h3>
+      <div id="award-skip-msg" class="alert alert-info" style="display:none;margin-bottom:16px">
+        本次匯入未對應獲獎項目欄位，略過整理。
+      </div>
+      <div id="award-panel" style="display:none">
+        <p style="font-size:13px;color:#6e6e73;margin:0 0 12px">
+          系統可依書商原始「獲獎項目」文字分組，建議對應的教育局官方 9 種獲獎名稱與必選／推薦／自選，您可在此批次修改後再正式匯入。
+        </p>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-primary" id="run-award-normalize-btn" onclick="runAwardNormalize()">整理書單</button>
+          <span id="award-summary-bar" style="font-size:13px;color:#495057"></span>
+        </div>
+        <div id="award-error" style="margin-bottom:12px"></div>
+        <div id="award-table-wrap" class="card" style="display:none;padding:0;margin-bottom:16px">
+          <div class="table-wrap" style="max-height:460px;overflow-y:auto">
+            <table id="award-groups-table" class="award-table">
+              <thead>
+                <tr>
+                  <th style="min-width:150px">原始獲獎項目</th>
+                  <th style="width:60px">筆數</th>
+                  <th style="min-width:160px">範例書名</th>
+                  <th style="min-width:220px">建議官方名稱</th>
+                  <th style="width:96px">必選/推薦/自選</th>
+                  <th style="min-width:150px">備註</th>
+                  <th style="width:96px">狀態</th>
+                </tr>
+              </thead>
+              <tbody id="award-groups-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="goToStep('D')">← 上一步</button>
         <button class="btn btn-primary" onclick="goToStep('E')">下一步 →</button>
       </div>
     </div>
@@ -156,7 +208,7 @@
       </div>
       <div id="step-E-result" style="margin-bottom:12px"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-secondary" onclick="goToStep('D')">← 上一步</button>
+        <button class="btn btn-secondary" onclick="goToStep('award')">← 上一步</button>
         <button class="btn btn-primary" id="confirm-btn" onclick="doConfirmImport()">確認匯入</button>
         <button class="btn btn-secondary" id="reset-wizard-btn" style="display:none" onclick="resetVendorWizard()">匯入另一份書單</button>
       </div>
@@ -206,6 +258,11 @@ let currentWizardStep = 'A';
 let savedMappings = null;
 let savedExtraFields = null;
 let hasExistingHoldings = false;
+let awardGroups = [];
+let awardOverrides = {};
+let awardNormalizedKey = '';
+
+const ELIGIBILITY_OPTIONS = ['', '必選', '推薦', '自選'];
 
 const SYSTEM_FIELDS = [
   {key:'title',         label:'書名',     required:true},
@@ -337,7 +394,7 @@ function goToStep(step) {
     savedExtraFields = getExtraFields();
   }
   currentWizardStep = step;
-  const order = ['A','B','C','D','E'];
+  const order = ['A','B','C','D','award','E'];
   order.forEach(s => {
     document.getElementById('step-' + s).style.display = (s === step) ? '' : 'none';
     const ws = document.getElementById('ws-' + s);
@@ -347,7 +404,22 @@ function goToStep(step) {
   });
   if (step === 'C') renderMappingTable();
   if (step === 'D') renderExtraFields();
+  if (step === 'award') renderAwardStep();
   if (step === 'E') renderSummary();
+}
+
+function resetAwardState() {
+  awardGroups = [];
+  awardOverrides = {};
+  awardNormalizedKey = '';
+  const errEl = document.getElementById('award-error');
+  const sumEl = document.getElementById('award-summary-bar');
+  const wrapEl = document.getElementById('award-table-wrap');
+  const bodyEl = document.getElementById('award-groups-body');
+  if (errEl) errEl.innerHTML = '';
+  if (sumEl) sumEl.textContent = '';
+  if (wrapEl) wrapEl.style.display = 'none';
+  if (bodyEl) bodyEl.innerHTML = '';
 }
 
 function resetVendorWizard() {
@@ -355,6 +427,7 @@ function resetVendorWizard() {
   previewData = null;
   savedMappings = null;
   savedExtraFields = null;
+  resetAwardState();
   document.getElementById('vendor-file').value = '';
   document.getElementById('step-A-status').innerHTML = '';
   document.getElementById('step-E-result').innerHTML = '';
@@ -368,6 +441,7 @@ async function handleFileUpload(file) {
   wizardFile = file;
   savedMappings = null;
   savedExtraFields = null;
+  resetAwardState();
   document.getElementById('step-A-status').innerHTML =
     '<div class="alert alert-info"><span class="spinner"></span> 讀取檔案中...</div>';
   try {
@@ -390,6 +464,7 @@ async function callPreview(sheetName, headerRow0) {
   previewData = await api('/api/imports/vendor-books/preview', { method: 'POST', body: fd });
   savedMappings = null;
   savedExtraFields = null;
+  resetAwardState();
 
   const sel = document.getElementById('sheet-select');
   sel.innerHTML = (previewData.sheets || []).map(s =>
@@ -480,6 +555,168 @@ function validateAndGoD() {
   goToStep('D');
 }
 
+function getAwardContextKey() {
+  const m = getMappings();
+  const sheetName = document.getElementById('sheet-select').value;
+  const hr1 = document.getElementById('header-row-input').value;
+  return `${sheetName}|${hr1}|${m.award_item || ''}|${m.title || ''}`;
+}
+
+function countPendingAwardReviews() {
+  return awardGroups.filter(g => !g._overridden && (g.status === 'needs_review' || g.status === 'unrecognized')).length;
+}
+
+function renderAwardStep() {
+  const mappings = getMappings();
+  const skipEl = document.getElementById('award-skip-msg');
+  const panelEl = document.getElementById('award-panel');
+  if (!mappings.award_item) {
+    resetAwardState();
+    skipEl.style.display = '';
+    panelEl.style.display = 'none';
+    return;
+  }
+  skipEl.style.display = 'none';
+  panelEl.style.display = '';
+  if (awardNormalizedKey && awardNormalizedKey !== getAwardContextKey()) {
+    resetAwardState();
+  }
+  if (awardGroups.length) {
+    renderAwardGroupsTable();
+  }
+}
+
+async function runAwardNormalize() {
+  if (!wizardFile) return;
+  const mappings = getMappings();
+  if (!mappings.award_item) {
+    renderAwardStep();
+    return;
+  }
+  const btn = document.getElementById('run-award-normalize-btn');
+  const errEl = document.getElementById('award-error');
+  const sumEl = document.getElementById('award-summary-bar');
+  btn.disabled = true;
+  btn.textContent = '整理中...';
+  errEl.innerHTML = '';
+  sumEl.textContent = '分析獲獎項目分組中...';
+
+  const sheetName = document.getElementById('sheet-select').value;
+  const hr1 = parseInt(document.getElementById('header-row-input').value) || 1;
+  const fd = new FormData();
+  fd.append('file', wizardFile);
+  if (sheetName) fd.append('sheet_name', sheetName);
+  fd.append('header_row', hr1 - 1);
+  fd.append('mappings', JSON.stringify(mappings));
+  if (pid) fd.append('project_id', pid);
+
+  try {
+    const res = await api('/api/imports/vendor-books/normalize-awards', { method: 'POST', body: fd });
+    awardGroups = (res.groups || []).map(g => ({
+      ...g,
+      _overridden: false,
+      _rec: g.recommendation_source || '',
+      _elig: g.eligibility_label || '',
+      _notes: g.award_notes || '',
+    }));
+    awardOverrides = {};
+    awardGroups.forEach(g => {
+      if (g.raw_award !== '') {
+        awardOverrides[g.raw_award] = {
+          recommendation_source: g._rec,
+          eligibility_label: g._elig,
+          award_notes: g._notes,
+        };
+      }
+    });
+    awardNormalizedKey = getAwardContextKey();
+    renderAwardGroupsTable();
+  } catch (e) {
+    errEl.innerHTML = `<div class="alert alert-error">${esc(formatImportError(e.message, 'vendor-preview'))}</div>`;
+    sumEl.textContent = '';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '重新整理書單';
+  }
+}
+
+function getAwardStatusMeta(g) {
+  if (g._overridden) return { label: '老師已覆寫', cls: 'overridden' };
+  if (g.status === 'auto') return { label: '已自動整理', cls: 'auto' };
+  if (g.status === 'needs_review') return { label: '需確認', cls: 'needs_review' };
+  if (g.status === 'unrecognized') return { label: '無法辨識', cls: 'unrecognized' };
+  return { label: '未填寫', cls: 'empty' };
+}
+
+function updateAwardSummaryBar() {
+  const sumEl = document.getElementById('award-summary-bar');
+  if (!awardGroups.length) {
+    sumEl.textContent = '尚無獲獎項目資料。';
+    return;
+  }
+  const pending = countPendingAwardReviews();
+  const overridden = awardGroups.filter(g => g._overridden).length;
+  sumEl.innerHTML = `共 <strong>${awardGroups.length}</strong> 組` +
+    (pending > 0 ? `，尚有 <strong style="color:#b71c1c">${pending}</strong> 組需確認` : '，已全部確認或自動整理') +
+    (overridden > 0 ? `（老師已覆寫 ${overridden} 組）` : '');
+}
+
+function renderAwardGroupsTable() {
+  const wrap = document.getElementById('award-table-wrap');
+  const tbody = document.getElementById('award-groups-body');
+  updateAwardSummaryBar();
+  if (!awardGroups.length) {
+    wrap.style.display = 'none';
+    tbody.innerHTML = '';
+    return;
+  }
+  wrap.style.display = '';
+  tbody.innerHTML = awardGroups.map((g, idx) => {
+    const meta = getAwardStatusMeta(g);
+    const rowCls = meta.cls === 'needs_review' || meta.cls === 'unrecognized' || meta.cls === 'overridden'
+      ? `award-row-${meta.cls}` : '';
+    const recOpts = ['', ...H_ALLOWED].map(opt =>
+      `<option value="${esc(opt)}"${opt === g._rec ? ' selected' : ''}>${esc(opt) || '— 請選擇 —'}</option>`
+    ).join('');
+    const eligOpts = ELIGIBILITY_OPTIONS.map(opt =>
+      `<option value="${esc(opt)}"${opt === g._elig ? ' selected' : ''}>${esc(opt) || '—'}</option>`
+    ).join('');
+    const samples = (g.sample_titles || []).map(t => esc(t)).join('<br>') || '<span style="color:#999">—</span>';
+    const rawLabel = g.raw_award ? esc(g.raw_award) : '<span style="color:#999">（未填寫）</span>';
+    return `<tr id="award-row-${idx}" class="${rowCls}">
+      <td style="word-break:break-word">${rawLabel}</td>
+      <td style="text-align:right">${Number(g.count) || 0}</td>
+      <td style="font-size:12px;color:#555">${samples}</td>
+      <td><select onchange="updateAwardOverride(${idx}, 'recommendation_source', this.value)">${recOpts}</select></td>
+      <td><select onchange="updateAwardOverride(${idx}, 'eligibility_label', this.value)">${eligOpts}</select></td>
+      <td><input type="text" value="${esc(g._notes)}" placeholder="備註（選填）" onchange="updateAwardOverride(${idx}, 'award_notes', this.value)"></td>
+      <td><span id="award-status-${idx}" class="award-badge award-badge-${meta.cls}">${esc(meta.label)}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function updateAwardOverride(idx, field, value) {
+  const g = awardGroups[idx];
+  if (!g) return;
+  if (field === 'recommendation_source') g._rec = value;
+  else if (field === 'eligibility_label') g._elig = value;
+  else if (field === 'award_notes') g._notes = value;
+  g._overridden = true;
+  awardOverrides[g.raw_award] = {
+    recommendation_source: g._rec,
+    eligibility_label: g._elig,
+    award_notes: g._notes,
+  };
+  const rowEl = document.getElementById('award-row-' + idx);
+  if (rowEl) rowEl.className = 'award-row-overridden';
+  const badgeEl = document.getElementById('award-status-' + idx);
+  if (badgeEl) {
+    badgeEl.className = 'award-badge award-badge-overridden';
+    badgeEl.textContent = '老師已覆寫';
+  }
+  updateAwardSummaryBar();
+}
+
 function renderSummary() {
   const mappings = getMappings();
   const extras = getExtraFields();
@@ -489,11 +726,22 @@ function renderSummary() {
     const f = SYSTEM_FIELDS.find(x => x.key === sys);
     return `${f ? f.label : sys}→${src}`;
   }).join('、');
+  let awardSummaryText = '未執行（維持原欄位對應）';
+  if (!mappings.award_item) {
+    awardSummaryText = '未對應獲獎項目欄位（略過）';
+  } else if (awardGroups.length) {
+    const pending = countPendingAwardReviews();
+    const overridden = awardGroups.filter(g => g._overridden).length;
+    awardSummaryText = `已整理 ${awardGroups.length} 組` +
+      (overridden > 0 ? `（老師已覆寫 ${overridden} 組）` : '') +
+      (pending > 0 ? ` — 尚有 ${pending} 組未確認（將套用系統建議值）` : '');
+  }
   document.getElementById('import-summary').innerHTML = `
     <dt>工作表</dt><dd>${esc(sheetName)}</dd>
     <dt>標題列</dt><dd>第 ${esc(hr1)} 列</dd>
     <dt>欄位對應</dt><dd style="word-break:break-all">${esc(mapDesc) || '（無）'}</dd>
     <dt>額外欄位</dt><dd>${extras.length ? esc(extras.join('、')) : '（無）'}</dd>
+    <dt>獲獎整理</dt><dd>${esc(awardSummaryText)}</dd>
   `;
   document.getElementById('step-E-result').innerHTML = '';
   document.getElementById('confirm-btn').disabled = false;
@@ -528,6 +776,7 @@ async function doConfirmImport() {
   fd.append('header_row', hr1 - 1);
   fd.append('mappings', JSON.stringify(mappings));
   fd.append('extra_field_settings', JSON.stringify(extras));
+  fd.append('award_overrides', JSON.stringify(awardOverrides));
   fd.append('save_profile', saveProfile ? 'true' : 'false');
   if (saveProfile && profileName) fd.append('profile_name', profileName);
 

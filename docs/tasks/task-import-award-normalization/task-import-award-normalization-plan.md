@@ -2,9 +2,9 @@
 
 ## 實作步驟
 
-### 步驟 1：新增 migration `migrations/008_award_normalization_rules.sql`
+### 步驟 1：新增 migration `migrations/009_award_normalization_rules.sql`
 
-建立 `award_normalization_rules` 表並 seed 內建規則（依 `docs/reports/award-normalization-import-feature-evaluation.md` 的「A 欄與 R 欄的關聯」與「衝突」章節）：
+建立 `award_normalization_rules` 表並 seed 內建規則（依 `docs/reports/award-normalization-import-feature-evaluation.md` 的「A 欄與 R 欄的關聯」與「衝突」章節；`008_add_indexes.sql` 已佔用 008，故本次使用 009）：
 
 ```sql
 CREATE TABLE award_normalization_rules (
@@ -37,9 +37,11 @@ VALUES
     ('general_books', 'contains', 'SDGS', '圖書分級推薦書目、臺灣歷史文化分級推薦書目', '推薦', 'raw_award', 30, 0.5, 1, datetime('now'), datetime('now'));
 ```
 
-`priority` 數字越小越優先；同層內以 `raw_pattern` 命中順序為 SQL 回傳順序（`ORDER BY priority ASC, id ASC`）。實際 migration 編號需在實作時執行 `git log --oneline -- migrations/` 確認 007 之後是否已有其他 task 佔用 008，若有衝突則遞補下一個可用編號。
+`priority` 數字越小越優先；同層內以 `raw_pattern` 命中順序為 SQL 回傳順序（`ORDER BY priority ASC, id ASC`）。
 
 ### 步驟 2：新增 `app/services/award_normalization_service.py`
+
+連線管理一律使用 `app.database.db_session(get_connection)`，不可裸開 `get_connection()`。
 
 ```python
 DEFAULT_UNRECOGNIZED_AWARD = "其他國內外具公信力單位辦理之獎項(請備註獎項名稱)"
@@ -83,8 +85,8 @@ def group_normalize(rows: list[dict], project_type: str = "general_books") -> li
 
 ### 步驟 4：`app/services/import_service.py` 的 `confirm_import()` 新增 `award_overrides` 參數
 
-- 函式簽名新增 `award_overrides: dict | None = None`（第 195–202 行參數列附近）。
-- 在組成 `book` dict 前（第 276–285 行），若 `award_overrides` 非 None 且 `get_field("award_item")`（strip 後）存在於 `award_overrides`：
+- `confirm_import()` 與 `_insert_vendor_books_core()` 函式簽名新增 `award_overrides: dict | None = None`。
+- 在 `_insert_vendor_books_core()` 組成每筆 `book` dict 與 `rows_to_insert` tuple 前，若 `award_overrides` 非 None 且 `(get_field("award_item") or "").strip()` 存在於 `award_overrides`：
   ```python
   raw_award = (get_field("award_item") or "").strip()
   override = (award_overrides or {}).get(raw_award)
@@ -92,12 +94,12 @@ def group_normalize(rows: list[dict], project_type: str = "general_books") -> li
   eligibility_label = override["eligibility_label"] if override else get_field("eligibility_label")
   award_notes = override["award_notes"] if override else get_field("award_notes")
   ```
-  取代原本直接呼叫 `get_field("recommendation_source")` 等三處（第 284、319–322、541–544 行三段重複邏輯只需修改 `confirm_import()` 這一份；`import_vendor_books()`（legacy 單步驟函式，第 433 行起）不在本 task 範圍，不修改）。
+  同時套用於 `book` dict（供 `compute_completeness()` 使用）與 `rows_to_insert` tuple（供 `executemany()` 寫入），並維持既有零筆資料 rollback 防清空行為；`import_vendor_books()`（legacy 單步驟函式）不傳 `award_overrides`，行為維持不變。
 - 未帶 `award_overrides` 或該筆 `award_item` 未命中時，行為與現行完全一致（既有測試不受影響）。
 
 ### 步驟 5：`app/routers/imports.py` 新增與修改 endpoint
 
-新增：
+新增（DB 查詢一律使用 `with db_session(get_connection) as conn:`）：
 
 ```python
 @router.post("/vendor-books/normalize-awards")
@@ -116,9 +118,8 @@ async def normalize_vendor_book_awards(
         raise HTTPException(status_code=400, detail=f"mappings JSON 格式錯誤：{e}")
     project_type = "general_books"
     if project_id is not None:
-        conn = get_connection()
-        project_type = _resolve_project_type(conn, project_id)
-        conn.close()
+        with db_session(get_connection) as conn:
+            project_type = _resolve_project_type(conn, project_id)
     try:
         groups = preview_award_groups(content, file.filename, sheet_name, header_row, mappings_dict, project_type)
     except Exception as e:
@@ -126,28 +127,28 @@ async def normalize_vendor_book_awards(
     return {"groups": groups}
 ```
 
-修改 `confirm_vendor_books()`（第 55–115 行）：新增 `award_overrides: str = Form("{}")` 參數，`json.loads` 後傳入 `confirm_import(..., award_overrides=award_overrides_dict)`。
+修改 `confirm_vendor_books()`：新增 `award_overrides: str = Form("{}")` 參數，`json.loads` 後傳入 `confirm_import(..., award_overrides=award_overrides_dict)`；`save_profile` 的 DB 操作亦統一使用 `with db_session(get_connection) as conn:`。
 
-`import_service` import 列（第 8–15 行）加入 `preview_award_groups`。
+`import_service` import 列加入 `preview_award_groups`。
 
 ### 步驟 6：`app/static/import.html` 前端整理步驟
 
-**stepper 導覽**（第 73–77 行）：在 `ws-D` 與 `ws-E` 之間新增：
+**stepper 導覽**：在 `ws-D` 與 `ws-E` 之間新增：
 ```html
 <div class="wstep" id="ws-award">整&nbsp;整理獲獎</div>
 ```
 
-**步驟內容**（第 129–139 行 `step-D` 與第 141 行 `step-E` 之間）新增 `step-award` 區塊：分組表格（`<table id="award-groups-table">`）、每組一列，含原始文字、筆數、範例書名、官方名稱下拉（沿用 `H_ALLOWED` 清單，於 import.html 內新增同值常數，與 `selection.html` 第 148–158 行維持一致）、必選/推薦/自選下拉、備註輸入、狀態標籤；上方顯示「整理書單」按鈕與「尚有 N 組需確認」提示。
+**步驟內容**：在 `step-D` 與 `step-E` 之間新增 `step-award` 區塊：分組表格（`<table id="award-groups-table">`）、每組一列，含原始文字、筆數、範例書名、官方名稱下拉（直接沿用 `app/static/js/common.js` 既有的 `H_ALLOWED`，不在 `import.html` 重複定義）、必選/推薦/自選下拉、備註輸入、狀態標籤；上方顯示「整理書單」按鈕與「尚有 N 組需確認」提示。所有動態內容一律以 `esc()` 跳脫。
 
 **JS 邏輯**：
-- `order` 陣列（第 305 行）改為 `['A','B','C','D','award','E']`。
-- `goToStep()`（第 304–316 行）新增 `if (step === 'award') renderAwardStep();`。
-- `step-D` 的「下一步」按鈕（第 137 行）由 `goToStep('E')` 改為 `goToStep('award')`；`step-award` 新增「← 上一步」回 `D`、「下一步 →」到 `E`；`step-E` 的「← 上一步」（第 158 行）改為 `goToStep('award')`。
-- 新增全域 `let awardOverrides = {};`（沿用 `wizardFile`/`previewData` 同一區塊，第 200–202 行附近）。
+- `order` 陣列改為 `['A','B','C','D','award','E']`。
+- `goToStep()` 新增 `if (step === 'award') renderAwardStep();`。
+- `step-D` 的「下一步」按鈕由 `goToStep('E')` 改為 `goToStep('award')`；`step-award` 新增「← 上一步」回 `D`、「下一步 →」到 `E`；`step-E` 的「← 上一步」改為 `goToStep('award')`。
+- 新增全域 `let awardOverrides = {};` 與 `let awardGroups = [];`（於 `resetVendorWizard()`、`handleFileUpload()`、`callPreview()` 時重置）。
 - 新增 `renderAwardStep()`：若 `getMappings().award_item` 為空，顯示提示文字並隱藏表格；否則顯示「整理書單」按鈕。
-- 新增 `async function runAwardNormalize()`：組 `FormData`（`file`、`sheet_name`、`header_row`、`mappings`、`project_id`）呼叫 `/api/imports/vendor-books/normalize-awards`，結果存入 `let awardGroups = []`，呼叫 `renderAwardGroupsTable()`。
-- 新增 `renderAwardGroupsTable()`：依 `awardGroups` 渲染表格列，下拉/輸入框 `onchange` 呼叫 `updateAwardOverride(rawAward, field, value)`，寫入 `awardOverrides[rawAward]` 並將該列狀態改為「老師已覆寫」。
-- `doConfirmImport()`（第 448 行起）在建立 `fd` 時新增 `fd.append('award_overrides', JSON.stringify(awardOverrides));`。
+- 新增 `async function runAwardNormalize()`：組 `FormData`（`file`、`sheet_name`、`header_row`、`mappings`、`project_id`）呼叫 `/api/imports/vendor-books/normalize-awards`，結果存入 `awardGroups`，呼叫 `renderAwardGroupsTable()`。
+- 新增 `renderAwardGroupsTable()`：依 `awardGroups` 渲染表格列，下拉/輸入框 `onchange` 呼叫 `updateAwardOverride(idx, field, value)`，寫入 `awardOverrides[rawAward]` 並將該列狀態改為「老師已覆寫」。
+- `renderSummary()` 若存在尚未確認組數，顯示提示；`doConfirmImport()` 建立 `fd` 時新增 `fd.append('award_overrides', JSON.stringify(awardOverrides));`。
 
 ### 步驟 7：新增/擴充測試
 
@@ -190,9 +191,9 @@ test(task-import-award-normalization): add award normalization service and confi
 
 | 路徑 | 說明 |
 |---|---|
-| `migrations/008_award_normalization_rules.sql`（新增，實際編號依當時最新序號確認） | 新增規則表與 seed 資料 |
+| `migrations/009_award_normalization_rules.sql`（新增） | 新增規則表與 seed 資料 |
 | `app/services/award_normalization_service.py`（新增） | 規則比對與分組邏輯 |
-| `app/services/import_service.py` | 新增 `preview_award_groups()`；`confirm_import()` 新增 `award_overrides` 參數與覆寫邏輯 |
+| `app/services/import_service.py` | 新增 `preview_award_groups()`；`confirm_import()` 與 `_insert_vendor_books_core()` 新增 `award_overrides` 參數與覆寫邏輯 |
 | `app/routers/imports.py` | 新增 `POST /api/imports/vendor-books/normalize-awards`；`confirm_vendor_books()` 新增 `award_overrides` 表單欄位 |
 | `app/static/import.html` | 新增 `step-award` 精靈步驟、`ws-award` stepper 項目、對應 JS 邏輯 |
 | `tests/test_award_normalization_service.py`（新增） | 規則比對與分組單元測試 |
@@ -202,11 +203,11 @@ test(task-import-award-normalization): add award normalization service and confi
 
 ## 驗證指令
 
-- lint: 待確認（專案未設定獨立 lint 指令，沿用 `python -m compileall app` 作為語法檢查）
-- format: 無法執行（專案未設定 formatter，不在本 task 引入）
-- typecheck: 無法執行（專案未使用型別檢查工具，不在本 task 引入）
-- test: `python -m pytest -q`（與 `.github/workflows/ci.yml` 一致）
-- build: 無適用（本專案無獨立 build 步驟；`build-portable.yml` 屬於發版流程，不在本 task 驗證範圍）
+- build / 語法：`.venv\Scripts\python.exe -m compileall -q app run_server.py setup_first_run.py`
+- lint：`.venv\Scripts\python.exe -m ruff check app tests run_server.py setup_first_run.py`
+- format：`.venv\Scripts\python.exe -m ruff format --check app/services/award_normalization_service.py app/services/import_service.py app/routers/imports.py tests/test_award_normalization_service.py tests/test_confirm_import.py`
+- typecheck：`.venv\Scripts\python.exe -m mypy app/logging_config.py app/database.py app/main.py app/config.py app/auth.py app/routers/backup.py app/routers/projects.py app/services/isbn_service.py app/services/completeness_service.py app/services/match_service.py app/services/validation_service.py app/services/award_normalization_service.py run_server.py`
+- test（含前端 JS `node --check`）：`.venv\Scripts\python.exe -m pytest -q`
 
 ## 成果報告
 

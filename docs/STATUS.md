@@ -1,7 +1,7 @@
 ---
-session_state: closed
-current_action: idle
-current_task: ""
+session_state: open
+current_action: executing
+current_task: task-import-award-normalization
 planning_task: ""
 planning_type: ""
 planning_base_branch: ""
@@ -12,6 +12,13 @@ updated: 2026-11-24
 # Project Status
 
 ## Active Tasks
+
+- id: task-import-award-normalization
+  status: active
+  branch: feat/task-import-award-normalization
+  base_branch: main
+  last_log: ""
+  last_agent: antigravity
 
 - id: task-startup-ops-and-import-perf
   status: done

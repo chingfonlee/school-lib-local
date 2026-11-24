@@ -9,6 +9,7 @@ from app.services.import_service import (
     import_library_holdings,
     import_vendor_books,
     preview_excel,
+    preview_award_groups,
     confirm_import,
     clear_library_holdings,
     clear_vendor_books,
@@ -18,9 +19,7 @@ router = APIRouter(prefix="/api/imports", tags=["imports"])
 
 
 def _resolve_project_type(conn, project_id: int) -> str:
-    row = conn.execute(
-        "SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT project_type FROM procurement_projects WHERE id = ?", (project_id,)).fetchone()
     return row["project_type"] if row else "local_culture"
 
 
@@ -52,6 +51,42 @@ async def preview_vendor_books(
     return result
 
 
+@router.post("/vendor-books/normalize-awards")
+async def normalize_vendor_book_awards(
+    file: UploadFile = File(...),
+    sheet_name: str | None = Form(None),
+    header_row: int = Form(...),
+    mappings: str = Form(...),
+    project_id: int | None = Form(None),
+    user_id: int = Depends(require_auth),
+):
+    content = await file.read()
+    try:
+        mappings_dict = json.loads(mappings)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"mappings JSON 格式錯誤：{e}")
+    if not isinstance(mappings_dict, dict):
+        raise HTTPException(status_code=400, detail="mappings 必須為 JSON 物件")
+
+    project_type = "general_books"
+    if project_id is not None:
+        with db_session(get_connection) as conn:
+            project_type = _resolve_project_type(conn, project_id)
+
+    try:
+        groups = preview_award_groups(
+            content,
+            file.filename or "",
+            sheet_name=sheet_name,
+            header_row=header_row,
+            mappings=mappings_dict,
+            project_type=project_type,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"groups": groups}
+
+
 @router.post("/vendor-books/confirm")
 async def confirm_vendor_books(
     file: UploadFile = File(...),
@@ -60,6 +95,7 @@ async def confirm_vendor_books(
     header_row: int = Form(...),
     mappings: str = Form(...),
     extra_field_settings: str = Form("[]"),
+    award_overrides: str = Form("{}"),
     save_profile: bool = Form(False),
     profile_name: str | None = Form(None),
     user_id: int = Depends(require_auth),
@@ -68,14 +104,16 @@ async def confirm_vendor_books(
     try:
         mappings_dict = json.loads(mappings)
         extra_list = json.loads(extra_field_settings)
+        award_overrides_dict = json.loads(award_overrides) if award_overrides else {}
     except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"mappings/extra_field_settings JSON 格式錯誤：{e}")
+        raise HTTPException(status_code=400, detail=f"mappings/extra_field_settings/award_overrides JSON 格式錯誤：{e}")
+    if not isinstance(award_overrides_dict, dict):
+        raise HTTPException(status_code=400, detail="award_overrides 必須為 JSON 物件")
 
     profile_id = None
     if save_profile and profile_name:
         now = datetime.now(timezone.utc).isoformat()
-        conn = get_connection()
-        try:
+        with db_session(get_connection) as conn:
             proj_type = _resolve_project_type(conn, project_id)
             row = conn.execute(
                 "INSERT OR IGNORE INTO import_profiles"
@@ -95,8 +133,6 @@ async def confirm_vendor_books(
             )
             conn.commit()
             profile_id = row.lastrowid or None
-        finally:
-            conn.close()
 
     try:
         result = confirm_import(
@@ -109,6 +145,7 @@ async def confirm_vendor_books(
             extra_field_settings=extra_list,
             user_id=user_id,
             profile_id=profile_id,
+            award_overrides=award_overrides_dict or None,
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -161,9 +198,7 @@ async def list_batches(
                 (project_id,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM import_batches ORDER BY imported_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM import_batches ORDER BY imported_at DESC").fetchall()
     return [dict(r) for r in rows]
 
 
